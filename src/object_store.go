@@ -205,8 +205,13 @@ func (o *ObjectStore) CreateSignedURL(bucket, key string, ttl time.Duration) (st
 	})
 	log.Infof("CreateSignedURL")
 
-	return objects.CreateTempURL(o.client, bucket, key, objects.CreateTempURLOpts{
+	url, err := objects.CreateTempURL(o.client, bucket, key, objects.CreateTempURLOpts{
 		Method: http.MethodGet,
 		TTL:    int(ttl.Seconds()),
 	})
+	if err != nil {
+		return "", fmt.Errorf("Failed to create temporary URL for bucket %v with key %v: %v", bucket, key, err)
+	}
+
+	return url, nil
 }
