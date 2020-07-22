@@ -132,7 +132,7 @@ func (o *ObjectStore) ObjectExists(bucket, key string) (bool, error) {
 		return false, fmt.Errorf("Cannot Get key %v in bucket %v: %v", key, bucket, result.Err)
 	}
 
-	return true, result.Err
+	return true, nil
 }
 
 // ListCommonPrefixes returns list of objects in bucket, that match specified prefix
@@ -197,7 +197,7 @@ func (o *ObjectStore) DeleteObject(bucket, key string) error {
 		return fmt.Errorf("Failed to delete object with key %v in bucket %v: %v", key, bucket, err)
 	}
 
-	return err
+	return nil
 }
 
 // CreateSignedURL creates temporary URL for key in bucket
