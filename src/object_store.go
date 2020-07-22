@@ -67,14 +67,13 @@ func (o *ObjectStore) Init(config map[string]string) error {
 	}
 
 	region := GetEnv("OS_REGION_NAME", "")
-	client, err := openstack.NewObjectStorageV1(provider, gophercloud.EndpointOpts{
+	o.client, err = openstack.NewObjectStorageV1(provider, gophercloud.EndpointOpts{
 		Region: region,
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to create Go Swift storage object: %v", err)
 	}
 
-	o.client = client
 	return nil
 }
 
