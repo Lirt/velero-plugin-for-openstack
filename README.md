@@ -40,6 +40,10 @@ go test -v ./...
 ## Build
 
 ```bash
+# Build code
 go mod tidy
 go build
+
+# Build image
+docker build --file docker/Dockerfile velero-swift:my-test-tag .
 ```
