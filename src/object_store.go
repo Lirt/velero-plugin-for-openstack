@@ -49,8 +49,7 @@ func Authenticate() (*gophercloud.ProviderClient, error) {
 		Transport: transport,
 	}
 
-	err = openstack.Authenticate(pc, authOpts)
-	if err != nil {
+	if err := openstack.Authenticate(pc, authOpts); err != nil {
 		return nil, err
 	}
 
@@ -105,8 +104,7 @@ func (o *ObjectStore) PutObject(bucket string, key string, body io.Reader) error
 		Content: body,
 	}
 
-	_, err := objects.Create(o.client, bucket, key, createOpts).Extract()
-	if err != nil {
+	if _, err := objects.Create(o.client, bucket, key, createOpts).Extract(); err != nil {
 		return fmt.Errorf("Failed to create new object in bucket %v with key %v: %v", bucket, key, err)
 	}
 
