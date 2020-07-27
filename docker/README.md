@@ -1,6 +1,15 @@
+# Supported tags and respective `Dockerfile` links
+
+* [`latest` (Dockerfile)](https://github.com/Lirt/velero-plugin-swift/blob/master/docker/Dockerfile)
+* [`v0.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-swift/blob/v0.1/docker/Dockerfile)
+
 # Swift plugin for Velero
 
 Openstack Swift plugin for velero backups.
+
+This image should be used as plugin for [Velero Kubernetes backup solution](https://velero.io/).
+
+Currently it does only backups of Kubernetes resources. Module for volume backups was not implemented yet.
 
 ## Configure
 
@@ -27,23 +36,7 @@ Change configuration of `backupstoragelocations.velero.io`:
 ```yaml
  spec:
    objectStorage:
+     # Bucket must exist beforehand
      bucket: <BUCKET_NAME>
    provider: swift
-```
-
-## Test
-
-```bash
-go test -v ./...
-```
-
-## Build
-
-```bash
-# Build code
-go mod tidy
-go build
-
-# Build image
-docker build --file docker/Dockerfile velero-swift:my-test-tag .
 ```
