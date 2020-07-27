@@ -26,7 +26,7 @@ func NewObjectStore(log logrus.FieldLogger) *ObjectStore {
 }
 
 // Authenticate to Swift
-func Authenticate() (*gophercloud.ProviderClient, error) {
+func authenticate() (*gophercloud.ProviderClient, error) {
 	authOpts, err := openstack.AuthOptionsFromEnv()
 	if err != nil {
 		return nil, err
@@ -60,7 +60,7 @@ func Authenticate() (*gophercloud.ProviderClient, error) {
 func (o *ObjectStore) Init(config map[string]string) error {
 	o.log.Infof("ObjectStore.Init called")
 
-	provider, err := Authenticate()
+	provider, err := authenticate()
 	if err != nil {
 		return fmt.Errorf("Failed to authenticate against Swift: %v", err)
 	}
