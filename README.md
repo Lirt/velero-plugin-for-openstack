@@ -45,5 +45,5 @@ go mod tidy
 go build
 
 # Build image
-docker build --file docker/Dockerfile velero-swift:my-test-tag .
+docker build --file docker/Dockerfile --tag velero-swift:my-test-tag .
 ```
