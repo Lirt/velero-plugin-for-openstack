@@ -1,6 +1,6 @@
 # Swift plugin for Velero
 
-Openstack Swift plugin for velero backups.
+Openstack Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
 ## Configure
 
@@ -16,10 +16,14 @@ export OS_REGION_NAME=<REGION>
 export OS_VERIFY="false"
 ```
 
-Add plugin to velero:
+Initialize velero plugin
 
 ```bash
-velero plugin add lirt/velero-plugin-swift:v0.1
+# Initialize velero from scratch:
+velero install --provider swift --plugins lirt/velero-plugin-swift:v0.1.1 --bucket <BUCKET_NAME> --no-secret
+
+# Or add plugin to existing velero:
+velero plugin add lirt/velero-plugin-swift:v0.1.1
 ```
 
 Change configuration of `backupstoragelocations.velero.io`:
