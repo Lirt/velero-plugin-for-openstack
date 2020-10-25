@@ -1,7 +1,7 @@
 package main
 
 import (
-	swift "github.com/Lirt/velero-plugin-swift/src"
+	swift "github.com/Lirt/velero-plugin-swift/src/swift"
 	"github.com/sirupsen/logrus"
 	veleroplugin "github.com/vmware-tanzu/velero/pkg/plugin/framework"
 )
