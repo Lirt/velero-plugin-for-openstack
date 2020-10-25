@@ -29,7 +29,7 @@ func NewObjectStore(log logrus.FieldLogger) *ObjectStore {
 func (o *ObjectStore) Init(config map[string]string) error {
 	o.log.Infof("ObjectStore.Init called")
 
-	err := utils.Authenticate(&o.provider)
+	err := utils.Authenticate(&o.provider, o.log)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate against Openstack: %v", err)
 	}
