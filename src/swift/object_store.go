@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Lirt/velero-plugin-swift/src/utils"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/objectstorage/v1/objects"
@@ -37,7 +38,7 @@ func authenticate() (*gophercloud.ProviderClient, error) {
 		return nil, err
 	}
 
-	tlsVerify, err := strconv.ParseBool(GetEnv("OS_VERIFY", "true"))
+	tlsVerify, err := strconv.ParseBool(utils.GetEnv("OS_VERIFY", "true"))
 	if err != nil {
 		return nil, fmt.Errorf("Cannot parse boolean from OS_VERIFY environment variable: %v", err)
 	}
@@ -65,7 +66,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		return fmt.Errorf("Failed to authenticate against Swift: %v", err)
 	}
 
-	region := GetEnv("OS_REGION_NAME", "")
+	region := utils.GetEnv("OS_REGION_NAME", "")
 	o.client, err = openstack.NewObjectStorageV1(provider, gophercloud.EndpointOpts{
 		Region: region,
 	})
