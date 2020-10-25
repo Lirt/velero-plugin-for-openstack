@@ -8,4 +8,3 @@ require (
 	github.com/stretchr/testify v1.4.0
 	github.com/vmware-tanzu/velero v1.4.2
 )
-
