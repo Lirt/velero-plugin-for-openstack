@@ -15,8 +15,9 @@ import (
 
 // ObjectStore is swift type that holds client and log
 type ObjectStore struct {
-	client *gophercloud.ServiceClient
-	log    logrus.FieldLogger
+	client   *gophercloud.ServiceClient
+	provider *gophercloud.ProviderClient
+	log      logrus.FieldLogger
 }
 
 // NewObjectStore instantiates a Swift ObjectStore.
@@ -28,17 +29,19 @@ func NewObjectStore(log logrus.FieldLogger) *ObjectStore {
 func (o *ObjectStore) Init(config map[string]string) error {
 	o.log.Infof("ObjectStore.Init called")
 
-	provider, err := utils.Authenticate()
+	err := utils.Authenticate(&o.provider)
 	if err != nil {
-		return fmt.Errorf("Failed to authenticate against Swift: %v", err)
+		return fmt.Errorf("failed to authenticate against Openstack: %v", err)
 	}
 
-	region := utils.GetEnv("OS_REGION_NAME", "")
-	o.client, err = openstack.NewObjectStorageV1(provider, gophercloud.EndpointOpts{
-		Region: region,
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to create Go Swift storage object: %v", err)
+	if o.client == nil {
+		region := utils.GetEnv("OS_REGION_NAME", "")
+		o.client, err = openstack.NewObjectStorageV1(o.provider, gophercloud.EndpointOpts{
+			Region: region,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create swift storage object: %v", err)
+		}
 	}
 
 	return nil
