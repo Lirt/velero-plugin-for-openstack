@@ -1,11 +1,9 @@
 package swift
 
 import (
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/Lirt/velero-plugin-swift/src/utils"
@@ -26,42 +24,11 @@ func NewObjectStore(log logrus.FieldLogger) *ObjectStore {
 	return &ObjectStore{log: log}
 }
 
-// Authenticate to Swift
-func authenticate() (*gophercloud.ProviderClient, error) {
-	authOpts, err := openstack.AuthOptionsFromEnv()
-	if err != nil {
-		return nil, err
-	}
-
-	pc, err := openstack.NewClient(authOpts.IdentityEndpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	tlsVerify, err := strconv.ParseBool(utils.GetEnv("OS_VERIFY", "true"))
-	if err != nil {
-		return nil, fmt.Errorf("Cannot parse boolean from OS_VERIFY environment variable: %v", err)
-	}
-
-	tlsconfig := &tls.Config{}
-	tlsconfig.InsecureSkipVerify = tlsVerify
-	transport := &http.Transport{TLSClientConfig: tlsconfig}
-	pc.HTTPClient = http.Client{
-		Transport: transport,
-	}
-
-	if err := openstack.Authenticate(pc, authOpts); err != nil {
-		return nil, err
-	}
-
-	return pc, nil
-}
-
 // Init initializes the plugin. After v0.10.0, this can be called multiple times.
 func (o *ObjectStore) Init(config map[string]string) error {
 	o.log.Infof("ObjectStore.Init called")
 
-	provider, err := authenticate()
+	provider, err := utils.Authenticate()
 	if err != nil {
 		return fmt.Errorf("Failed to authenticate against Swift: %v", err)
 	}
