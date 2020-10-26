@@ -77,7 +77,7 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotName, volumeType, volumeAZ
 	b.log.Infof("CreateVolumeFromSnapshot called", snapshotName, volumeType, volumeAZ)
 	readyTimeout := 300
 	snapshotID := b.snapshots[snapshotName].ID
-	volumeName := snapshotID + ".backup." + strconv.FormatUint(rand.Uint64(), 10)
+	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(rand.Uint64(), 10))
 
 	// Make sure snapshot is in ready state
 	// Possible values for snapshot state:
@@ -167,7 +167,7 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 // set of tags to the snapshot.
 func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	b.log.Infof("CreateSnapshot called", volumeID, volumeAZ, tags)
-	snapshotName := volumeID + ".snap." + strconv.FormatUint(rand.Uint64(), 10)
+	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(rand.Uint64(), 10))
 
 	b.log.Infof("Trying to create snapshot", snapshotName)
 	opts := snapshots.CreateOpts{
