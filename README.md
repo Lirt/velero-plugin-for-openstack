@@ -1,10 +1,10 @@
-# Swift plugin for Velero
+# Velero Plugins for Openstack
 
-Openstack Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
+Openstack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
 ## Configure
 
-Configure velero container with swift authentication environment variables:
+Configure velero container with your Openstack authentication environment variables:
 
 ```bash
 export OS_AUTH_URL=<AUTH_URL /v2.0>
@@ -20,10 +20,10 @@ Initialize velero plugin
 
 ```bash
 # Initialize velero from scratch:
-velero install --provider swift --plugins lirt/velero-plugin-swift:v0.1.1 --bucket <BUCKET_NAME> --no-secret
+velero install --provider openstack --plugins lirt/velero-plugin-for-openstack:v0.2.0 --bucket <BUCKET_NAME> --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-swift:v0.1.1
+velero plugin add lirt/velero-plugin-for-openstack:v0.2.0
 ```
 
 Change configuration of `backupstoragelocations.velero.io`:
@@ -32,13 +32,14 @@ Change configuration of `backupstoragelocations.velero.io`:
  spec:
    objectStorage:
      bucket: <BUCKET_NAME>
-   provider: swift
+   provider: openstack
 ```
 
-## Test
+Change configuration of `volumesnapshotlocations.velero.io`:
 
-```bash
-go test -v ./...
+```yaml
+ spec:
+   provider: openstack
 ```
 
 ## Build
@@ -49,5 +50,11 @@ go mod tidy
 go build
 
 # Build image
-docker build --file docker/Dockerfile --tag velero-swift:my-test-tag .
+docker build --file docker/Dockerfile --tag velero-plugin-for-openstack:my-test-tag .
+```
+
+## Test
+
+```bash
+go test -v ./...
 ```
