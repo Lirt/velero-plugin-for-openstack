@@ -38,7 +38,7 @@ export OS_SWIFT_TENANT_NAME=<TENANT_NAME>
 export OS_SWIFT_USERNAME=<USERNAME>
 ```
 
-### Install using velero cli
+### Install Using Velero CLI
 
 Initialize velero plugin
 
@@ -70,7 +70,7 @@ Change configuration of `volumesnapshotlocations.velero.io`:
    provider: velero.io/openstack
 ```
 
-### Install using Helm Chart
+### Install Using Helm Chart
 
 Alternative installation can be done using Helm Charts.
 
@@ -114,6 +114,13 @@ helm upgrade \
      --version 2.15.0
 ```
 
+## Volume Backups
+
+Please note two things regarding the volume backups:
+1. The snapshots are done with flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make the snapshot contents inconsistent.
+2. Snapshots in the cinder backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder backend creates durable snapshots with your cloud provider.
+
+Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/).
 
 ## Build
 
