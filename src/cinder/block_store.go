@@ -95,7 +95,7 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 		b.log.Errorf("failed to create volume from snapshot", snapshotID)
 		return "", errors.WithStack(err)
 	}
-	b.log.Infof("Backup volume was created", cinderVolume.ID)
+	b.log.Infof("Backup volume was created", volumeName, cinderVolume.ID)
 
 	return cinderVolume.ID, nil
 }
