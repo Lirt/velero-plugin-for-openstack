@@ -183,15 +183,19 @@ func (b *BlockStore) GetVolumeID(unstructuredPV runtime.Unstructured) (string, e
 		return "", errors.WithStack(err)
 	}
 
-	if pv.Spec.Cinder == nil {
-		return "", nil
+	var volumeID string
+
+	if pv.Spec.Cinder != nil {
+		volumeID = pv.Spec.Cinder.VolumeID
+	} else if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" {
+		volumeID = pv.Spec.CSI.VolumeHandle
 	}
 
-	if pv.Spec.Cinder.VolumeID == "" {
-		return "", errors.New("spec.cinder.volumeID not found")
+	if volumeID == "" {
+		return "", errors.New("volumeID not found")
 	}
 
-	return pv.Spec.Cinder.VolumeID, nil
+	return volumeID, nil
 }
 
 // SetVolumeID sets the specific identifier for the PersistentVolume.
