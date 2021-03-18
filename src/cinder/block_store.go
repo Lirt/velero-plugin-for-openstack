@@ -41,7 +41,7 @@ func (b *BlockStore) Init(config map[string]string) error {
 	b.config = config
 
 	// Authenticate to Openstack
-	err := utils.Authenticate(&b.provider, b.log)
+	err := utils.Authenticate(&b.provider, "cinder", b.log)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate against openstack: %v", err)
 	}
@@ -52,7 +52,7 @@ func (b *BlockStore) Init(config map[string]string) error {
 			Region: region,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create cinder storage object: %v", err)
+			return fmt.Errorf("failed to create cinder storage client: %v", err)
 		}
 	}
 

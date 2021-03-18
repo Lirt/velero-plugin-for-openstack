@@ -13,7 +13,7 @@ import (
 )
 
 // Authenticate to Openstack and write client result to **pc
-func Authenticate(pc **gophercloud.ProviderClient, log logrus.FieldLogger) error {
+func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.FieldLogger) error {
 	// If service client is already initialized and contains auth result
 	// we know we were already authenticated, or the client was reauthenticated
 	// using AllowReauth
@@ -28,7 +28,7 @@ func Authenticate(pc **gophercloud.ProviderClient, log logrus.FieldLogger) error
 	var authOpts gophercloud.AuthOptions
 
 	_, ok := os.LookupEnv("OS_SWIFT_AUTH_URL")
-	if ok {
+	if ok && service == "swift" {
 		log.Infof("Authenticating against Swift using environment variables")
 		authOpts = gophercloud.AuthOptions{
 			IdentityEndpoint: os.Getenv("OS_SWIFT_AUTH_URL"),
