@@ -147,6 +147,7 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 		Description: "Velero snapshot",
 		Metadata:    tags,
 		VolumeID:    volumeID,
+		Force:       true,
 	}
 
 	// Note: we will wait for snapshot to be in ready state in CreateVolumeForSnapshot()
