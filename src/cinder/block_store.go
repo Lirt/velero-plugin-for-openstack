@@ -20,12 +20,10 @@ import (
 
 // BlockStore is a plugin for containing state for the Cinder Block Storage
 type BlockStore struct {
-	client    *gophercloud.ServiceClient
-	provider  *gophercloud.ProviderClient
-	config    map[string]string
-	volumes   map[string]volumes.Volume
-	snapshots map[string]snapshots.Snapshot
-	log       logrus.FieldLogger
+	client   *gophercloud.ServiceClient
+	provider *gophercloud.ProviderClient
+	config   map[string]string
+	log      logrus.FieldLogger
 }
 
 // NewBlockStore instantiates a Cinder Volume Snapshotter.
@@ -41,14 +39,6 @@ var _ velero.VolumeSnapshotter = (*BlockStore)(nil)
 func (b *BlockStore) Init(config map[string]string) error {
 	b.log.Infof("BlockStore.Init called", config)
 	b.config = config
-
-	// Make sure we don't overwrite data, now that we can re-initialize the plugin
-	if b.volumes == nil {
-		b.volumes = make(map[string]volumes.Volume)
-	}
-	if b.snapshots == nil {
-		b.snapshots = make(map[string]snapshots.Snapshot)
-	}
 
 	// Authenticate to Openstack
 	err := utils.Authenticate(&b.provider, b.log)
@@ -70,26 +60,24 @@ func (b *BlockStore) Init(config map[string]string) error {
 }
 
 // CreateVolumeFromSnapshot creates a new volume in the specified
-// availability zone, initialized from the provided snapshot,
-// and with the specified type.
+// availability zone, initialized from the provided snapshot and with the specified type.
 // IOPS is ignored as it is not used in Cinder.
-func (b *BlockStore) CreateVolumeFromSnapshot(snapshotName, volumeType, volumeAZ string, iops *int64) (string, error) {
-	b.log.Infof("CreateVolumeFromSnapshot called", snapshotName, volumeType, volumeAZ)
+func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
+	b.log.Infof("CreateVolumeFromSnapshot called", snapshotID, volumeType, volumeAZ)
 	readyTimeout := 300
-	snapshotID := b.snapshots[snapshotName].ID
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(rand.Uint64(), 10))
 
 	// Make sure snapshot is in ready state
 	// Possible values for snapshot state:
 	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-snapshots.inc#volume-snapshots-snapshots
-	b.log.Infof("Waiting for snapshot to be in 'available' state", snapshotName, snapshotID, readyTimeout)
+	b.log.Infof("Waiting for snapshot to be in 'available' state", snapshotID, readyTimeout)
 
 	err := snapshots.WaitForStatus(b.client, snapshotID, "available", readyTimeout)
 	if err != nil {
-		b.log.Errorf("snapshot didn't get into 'available' state within the time limit", snapshotName, snapshotID, readyTimeout)
+		b.log.Errorf("snapshot didn't get into 'available' state within the time limit", snapshotID, readyTimeout)
 		return "", err
 	}
-	b.log.Infof("Snapshot is in 'available' state", snapshotName, snapshotID)
+	b.log.Infof("Snapshot is in 'available' state", snapshotID)
 
 	// Create Cinder Volume from snapshot (backup)
 	b.log.Infof("Starting to create volume from snapshot")
@@ -104,20 +92,10 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotName, volumeType, volumeAZ
 	var cinderVolume *volumes.Volume
 	cinderVolume, err = volumes.Create(b.client, opts).Extract()
 	if err != nil {
-		b.log.Errorf("failed to create volume from snapshot", snapshotName, snapshotID)
+		b.log.Errorf("failed to create volume from snapshot", snapshotID)
 		return "", errors.WithStack(err)
 	}
 	b.log.Infof("Backup volume was created", cinderVolume.ID)
-
-	// Remember the volume
-	b.volumes[cinderVolume.ID] = volumes.Volume{
-		Description:      "Velero backup from snapshot",
-		VolumeType:       volumeType,
-		AvailabilityZone: volumeAZ,
-		SnapshotID:       snapshotID,
-		ID:               cinderVolume.ID,
-		Name:             volumeName,
-	}
 
 	return cinderVolume.ID, nil
 }
@@ -127,24 +105,18 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotName, volumeType, volumeAZ
 func (b *BlockStore) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, error) {
 	b.log.Infof("GetVolumeInfo called", volumeID, volumeAZ)
 
-	// Volume exists in list of volumes
-	if vol, ok := b.volumes[volumeID]; ok {
-		return vol.VolumeType, nil, nil
+	volume, err := volumes.Get(b.client, volumeID).Extract()
+	if err != nil {
+		b.log.Errorf("failed to get volume %v from Cinder", volumeID)
+		return "", nil, fmt.Errorf("volume %v not found", volumeID)
 	}
 
-	// Volume doesn't exist in list of volumes
-	return "", nil, fmt.Errorf("volume %v not found", volumeID)
+	return volume.VolumeType, nil, nil
 }
 
-// IsVolumeReady Check if the volume is ready.
+// IsVolumeReady Check if the volume is in one of the ready states.
 func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err error) {
 	b.log.Infof("IsVolumeReady called", volumeID, volumeAZ)
-
-	// If volume doesn't exist in list of volumes
-	_, ok := b.volumes[volumeID]
-	if !ok {
-		return false, fmt.Errorf("volume %v doesn't exist in volumes map", volumeID)
-	}
 
 	// Get volume object from Cinder
 	cinderVolume, err := volumes.Get(b.client, volumeID).Extract()
@@ -153,7 +125,7 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 		return false, err
 	}
 
-	// These are ready states
+	// Ready states:
 	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-volumes.inc#volumes-volumes
 	if cinderVolume.Status == "available" || cinderVolume.Status == "in-use" {
 		return true, nil
@@ -184,23 +156,13 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 	}
 	snapshotID := createResult.ID
 
-	// Remember the snapshot
-	b.snapshots[snapshotName] = snapshots.Snapshot{
-		Name:        snapshotName,
-		ID:          snapshotID,
-		Description: "Velero snapshot",
-		Metadata:    tags,
-		VolumeID:    volumeID,
-	}
-
 	b.log.Infof("Snapshot finished successfuly", snapshotName, snapshotID)
-	return snapshotName, nil
+	return snapshotID, nil
 }
 
 // DeleteSnapshot deletes the specified volume snapshot.
-func (b *BlockStore) DeleteSnapshot(snapshotName string) error {
-	b.log.Infof("DeleteSnapshot called", snapshotName)
-	snapshotID := b.snapshots[snapshotName].ID
+func (b *BlockStore) DeleteSnapshot(snapshotID string) error {
+	b.log.Infof("DeleteSnapshot called", snapshotID)
 
 	// Delete snapshot from Cinder
 	b.log.Infof("Deleting Snapshot with ID", snapshotID)
@@ -208,9 +170,6 @@ func (b *BlockStore) DeleteSnapshot(snapshotName string) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-
-	// Delete snapshot from list of snapshots
-	delete(b.snapshots, snapshotID)
 
 	return nil
 }

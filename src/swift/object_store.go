@@ -146,7 +146,7 @@ func (o *ObjectStore) ListObjects(bucket, prefix string) ([]string, error) {
 
 	objects, err := o.ListCommonPrefixes(bucket, prefix, "/")
 	if err != nil {
-		return nil, fmt.Errorf("Failed to list objects from bucket %v with prefix %v: %v", bucket, prefix, err)
+		return nil, fmt.Errorf("Failed to list objects in bucket %v with prefix %v: %v", bucket, prefix, err)
 	}
 
 	return objects, nil
@@ -162,7 +162,7 @@ func (o *ObjectStore) DeleteObject(bucket, key string) error {
 
 	_, err := objects.Delete(o.client, bucket, key, nil).Extract()
 	if err != nil {
-		return fmt.Errorf("Failed to delete object with key %v in bucket %v: %v", key, bucket, err)
+		return fmt.Errorf("Failed to delete object with key %v from bucket %v: %v", key, bucket, err)
 	}
 
 	return nil
