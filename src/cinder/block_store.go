@@ -100,7 +100,7 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	return cinderVolume.ID, nil
 }
 
-// GetVolumeInfo returns the type the specified volume in the given availability zone.
+// GetVolumeInfo returns type of the specified volume in the given availability zone.
 // IOPS is not used as it is not supported by Cinder.
 func (b *BlockStore) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, error) {
 	b.log.Infof("GetVolumeInfo called", volumeID, volumeAZ)
