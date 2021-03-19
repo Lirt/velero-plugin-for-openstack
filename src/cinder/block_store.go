@@ -208,11 +208,13 @@ func (b *BlockStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID s
 		return nil, errors.WithStack(err)
 	}
 
-	if pv.Spec.Cinder == nil {
-		return nil, errors.New("spec.cinder not found")
+	if pv.Spec.Cinder != nil {
+		pv.Spec.Cinder.VolumeID = volumeID
+	} else if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" {
+		pv.Spec.CSI.VolumeHandle = volumeID
+	} else {
+		return nil, errors.New("spec.cinder or spec.csi for cinder driver not found")
 	}
-
-	pv.Spec.Cinder.VolumeID = volumeID
 
 	res, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pv)
 	if err != nil {
