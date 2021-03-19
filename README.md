@@ -116,8 +116,8 @@ helm upgrade \
 
 ## Volume Backups
 
-Please note two things regarding the volume backups:
-1. The snapshots are done with flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make the snapshot contents inconsistent.
+Please note two things regarding volume backups:
+1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent.
 2. Snapshots in the cinder backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder backend creates durable snapshots with your cloud provider.
 
 Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/).
@@ -138,3 +138,7 @@ docker build --file docker/Dockerfile --tag velero-plugin-for-openstack:my-test-
 ```bash
 go test -v ./...
 ```
+
+## Development
+
+The plugin interface is built based on the [official Velero plugin example](https://github.com/vmware-tanzu/velero-plugin-example).
