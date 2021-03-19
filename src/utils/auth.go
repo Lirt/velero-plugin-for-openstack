@@ -27,8 +27,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 	var err error
 	var authOpts gophercloud.AuthOptions
 
-	_, ok := os.LookupEnv("OS_SWIFT_AUTH_URL")
-	if ok && service == "swift" {
+	if _, ok := os.LookupEnv("OS_SWIFT_AUTH_URL"); ok && service == "swift" {
 		log.Infof("Authenticating against Swift using environment variables")
 		authOpts = gophercloud.AuthOptions{
 			IdentityEndpoint: os.Getenv("OS_SWIFT_AUTH_URL"),
