@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Lirt/velero-plugin-swift/src/utils"
@@ -29,13 +30,16 @@ func NewObjectStore(log logrus.FieldLogger) *ObjectStore {
 func (o *ObjectStore) Init(config map[string]string) error {
 	o.log.Infof("ObjectStore.Init called")
 
-	err := utils.Authenticate(&o.provider, o.log)
+	err := utils.Authenticate(&o.provider, "swift", o.log)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate against Openstack: %v", err)
 	}
 
 	if o.client == nil {
-		region := utils.GetEnv("OS_REGION_NAME", "")
+		region, ok := os.LookupEnv("OS_SWIFT_REGION_NAME")
+		if !ok {
+			region = utils.GetEnv("OS_REGION_NAME", "")
+		}
 		o.client, err = openstack.NewObjectStorageV1(o.provider, gophercloud.EndpointOpts{
 			Region: region,
 		})
@@ -57,7 +61,7 @@ func (o *ObjectStore) GetObject(bucket, key string) (io.ReadCloser, error) {
 
 	object := objects.Download(o.client, bucket, key, nil)
 	if object.Err != nil {
-		return nil, fmt.Errorf("Failed to download contents of key %v from bucket %v: %v", key, bucket, object.Err)
+		return nil, fmt.Errorf("failed to download contents of key %v from bucket %v: %v", key, bucket, object.Err)
 	}
 
 	return object.Body, nil
@@ -76,7 +80,7 @@ func (o *ObjectStore) PutObject(bucket string, key string, body io.Reader) error
 	}
 
 	if _, err := objects.Create(o.client, bucket, key, createOpts).Extract(); err != nil {
-		return fmt.Errorf("Failed to create new object in bucket %v with key %v: %v", bucket, key, err)
+		return fmt.Errorf("failed to create new object in bucket %v with key %v: %v", bucket, key, err)
 	}
 
 	return nil
@@ -97,7 +101,7 @@ func (o *ObjectStore) ObjectExists(bucket, key string) (bool, error) {
 			log.Infof("Key %v in bucket %v doesn't exist yet.", key, bucket)
 			return false, nil
 		}
-		return false, fmt.Errorf("Cannot Get key %v in bucket %v: %v", key, bucket, result.Err)
+		return false, fmt.Errorf("cannot Get key %v in bucket %v: %v", key, bucket, result.Err)
 	}
 
 	return true, nil
@@ -120,12 +124,12 @@ func (o *ObjectStore) ListCommonPrefixes(bucket, prefix, delimiter string) ([]st
 
 	allPages, err := objects.List(o.client, bucket, opts).AllPages()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to list objects in bucket %v: %v", bucket, err)
+		return nil, fmt.Errorf("failed to list objects in bucket %v: %v", bucket, err)
 	}
 
 	allObjects, err := objects.ExtractInfo(allPages)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to extract info from objects in bucket %v: %v", bucket, err)
+		return nil, fmt.Errorf("failed to extract info from objects in bucket %v: %v", bucket, err)
 	}
 
 	var objNames []string
@@ -146,7 +150,7 @@ func (o *ObjectStore) ListObjects(bucket, prefix string) ([]string, error) {
 
 	objects, err := o.ListCommonPrefixes(bucket, prefix, "/")
 	if err != nil {
-		return nil, fmt.Errorf("Failed to list objects from bucket %v with prefix %v: %v", bucket, prefix, err)
+		return nil, fmt.Errorf("failed to list objects in bucket %v with prefix %v: %v", bucket, prefix, err)
 	}
 
 	return objects, nil
@@ -162,7 +166,7 @@ func (o *ObjectStore) DeleteObject(bucket, key string) error {
 
 	_, err := objects.Delete(o.client, bucket, key, nil).Extract()
 	if err != nil {
-		return fmt.Errorf("Failed to delete object with key %v in bucket %v: %v", key, bucket, err)
+		return fmt.Errorf("failed to delete object with key %v from bucket %v: %v", key, bucket, err)
 	}
 
 	return nil
@@ -181,7 +185,7 @@ func (o *ObjectStore) CreateSignedURL(bucket, key string, ttl time.Duration) (st
 		TTL:    int(ttl.Seconds()),
 	})
 	if err != nil {
-		return "", fmt.Errorf("Failed to create temporary URL for bucket %v with key %v: %v", bucket, key, err)
+		return "", fmt.Errorf("failed to create temporary URL for bucket %v with key %v: %v", bucket, key, err)
 	}
 
 	return url, nil

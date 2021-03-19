@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/gophercloud/gophercloud"
@@ -12,7 +13,7 @@ import (
 )
 
 // Authenticate to Openstack and write client result to **pc
-func Authenticate(pc **gophercloud.ProviderClient, log logrus.FieldLogger) error {
+func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.FieldLogger) error {
 	// If service client is already initialized and contains auth result
 	// we know we were already authenticated, or the client was reauthenticated
 	// using AllowReauth
@@ -23,10 +24,28 @@ func Authenticate(pc **gophercloud.ProviderClient, log logrus.FieldLogger) error
 		}
 	}
 
-	log.Infof("Authenticating against Openstack using environment variables")
-	authOpts, err := openstack.AuthOptionsFromEnv()
-	if err != nil {
-		return err
+	var err error
+	var authOpts gophercloud.AuthOptions
+
+	if _, ok := os.LookupEnv("OS_SWIFT_AUTH_URL"); ok && service == "swift" {
+		log.Infof("Authenticating against Swift using environment variables")
+		authOpts = gophercloud.AuthOptions{
+			IdentityEndpoint: os.Getenv("OS_SWIFT_AUTH_URL"),
+			Username:         os.Getenv("OS_SWIFT_USERNAME"),
+			UserID:           os.Getenv("OS_SWIFT_USER_ID"),
+			Password:         os.Getenv("OS_SWIFT_PASSWORD"),
+			Passcode:         os.Getenv("OS_SWIFT_PASSCODE"),
+			DomainID:         os.Getenv("OS_SWIFT_DOMAIN_ID"),
+			DomainName:       os.Getenv("OS_SWIFT_DOMAIN_NAME"),
+			TenantID:         os.Getenv("OS_SWIFT_TENANT_ID"),
+			TenantName:       os.Getenv("OS_SWIFT_TENANT_NAME"),
+		}
+	} else {
+		log.Infof("Authenticating against Openstack using environment variables")
+		authOpts, err = openstack.AuthOptionsFromEnv()
+		if err != nil {
+			return err
+		}
 	}
 
 	authOpts.AllowReauth = true
@@ -38,7 +57,7 @@ func Authenticate(pc **gophercloud.ProviderClient, log logrus.FieldLogger) error
 
 	tlsVerify, err := strconv.ParseBool(GetEnv("OS_VERIFY", "true"))
 	if err != nil {
-		return fmt.Errorf("Cannot parse boolean from OS_VERIFY environment variable: %v", err)
+		return fmt.Errorf("cannot parse boolean from OS_VERIFY environment variable: %v", err)
 	}
 
 	tlsconfig := &tls.Config{}
