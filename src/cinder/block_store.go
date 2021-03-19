@@ -64,17 +64,17 @@ func (b *BlockStore) Init(config map[string]string) error {
 // IOPS is ignored as it is not used in Cinder.
 func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
 	b.log.Infof("CreateVolumeFromSnapshot called", snapshotID, volumeType, volumeAZ)
-	readyTimeout := 300
+	snapshotReadyTimeout := 300
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(rand.Uint64(), 10))
 
 	// Make sure snapshot is in ready state
 	// Possible values for snapshot state:
 	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-snapshots.inc#volume-snapshots-snapshots
-	b.log.Infof("Waiting for snapshot to be in 'available' state", snapshotID, readyTimeout)
+	b.log.Infof("Waiting for snapshot to be in 'available' state", snapshotID, snapshotReadyTimeout)
 
-	err := snapshots.WaitForStatus(b.client, snapshotID, "available", readyTimeout)
+	err := snapshots.WaitForStatus(b.client, snapshotID, "available", snapshotReadyTimeout)
 	if err != nil {
-		b.log.Errorf("snapshot didn't get into 'available' state within the time limit", snapshotID, readyTimeout)
+		b.log.Errorf("snapshot didn't get into 'available' state within the time limit", snapshotID, snapshotReadyTimeout)
 		return "", err
 	}
 	b.log.Infof("Snapshot is in 'available' state", snapshotID)
