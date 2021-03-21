@@ -2,6 +2,27 @@
 
 Openstack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
+## Table of Contents
+
+- [Velero Plugin for Openstack](#velero-plugin-for-openstack)
+  - [Compatibility](#compatibility)
+  - [Configuration](#configuration)
+    - [Install Using Velero CLI](#install-using-velero-cli)
+    - [Install Using Helm Chart](#install-using-helm-chart)
+  - [Volume Backups](#volume-backups)
+  - [Build](#build)
+  - [Test](#test)
+  - [Development](#development)
+
+## Compatibility
+
+Below is a listing of plugin versions and respective Velero versions for which the compatibility is tested and guaranteed.
+
+| Plugin Version | Velero Version |
+| :------------- | :------------- |
+| v0.2.x         | v1.4.x, v1.5.x |
+| v0.1.x         | v1.4.x, v1.5.x |
+
 ## Configuration
 
 Configure velero container with your Openstack authentication environment variables:
@@ -45,13 +66,13 @@ Initialize velero plugin
 ```bash
 # Initialize velero from scratch:
 velero install \
-       --provider "velero.io/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.2.0 \
+       --provider "openstack" \
+       --plugins lirt/velero-plugin-for-openstack:v0.2.1 \
        --bucket <BUCKET_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.2.0
+velero plugin add lirt/velero-plugin-for-openstack:v0.2.1
 ```
 
 Change configuration of `backupstoragelocations.velero.io`:
@@ -60,14 +81,14 @@ Change configuration of `backupstoragelocations.velero.io`:
  spec:
    objectStorage:
      bucket: <BUCKET_NAME>
-   provider: velero.io/openstack
+   provider: openstack
 ```
 
 Change configuration of `volumesnapshotlocations.velero.io`:
 
 ```yaml
  spec:
-   provider: velero.io/openstack
+   provider: openstack
 ```
 
 ### Install Using Helm Chart
@@ -88,7 +109,7 @@ configuration:
     bucket: my-swift-bucket
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.2.0
+  image: lirt/velero-plugin-for-openstack:v0.2.1
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
