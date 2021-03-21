@@ -45,13 +45,13 @@ Initialize velero plugin
 ```bash
 # Initialize velero from scratch:
 velero install \
-       --provider "velero.io/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.2.0 \
+       --provider "openstack" \
+       --plugins lirt/velero-plugin-for-openstack:v0.2.1 \
        --bucket <BUCKET_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.2.0
+velero plugin add lirt/velero-plugin-for-openstack:v0.2.1
 ```
 
 Change configuration of `backupstoragelocations.velero.io`:
@@ -60,14 +60,14 @@ Change configuration of `backupstoragelocations.velero.io`:
  spec:
    objectStorage:
      bucket: <BUCKET_NAME>
-   provider: velero.io/openstack
+   provider: openstack
 ```
 
 Change configuration of `volumesnapshotlocations.velero.io`:
 
 ```yaml
  spec:
-   provider: velero.io/openstack
+   provider: openstack
 ```
 
 ### Install Using Helm Chart
@@ -88,7 +88,7 @@ configuration:
     bucket: my-swift-bucket
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.2.0
+  image: lirt/velero-plugin-for-openstack:v0.2.1
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target

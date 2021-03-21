@@ -9,8 +9,8 @@ import (
 
 func main() {
 	veleroplugin.NewServer().
-		RegisterObjectStore("velero.io/openstack", newSwiftObjectStore).
-		RegisterVolumeSnapshotter("velero.io/openstack", newCinderBlockStore).
+		RegisterObjectStore("openstack", newSwiftObjectStore).
+		RegisterVolumeSnapshotter("openstack", newCinderBlockStore).
 		Serve()
 }
 
