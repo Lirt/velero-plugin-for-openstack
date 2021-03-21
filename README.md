@@ -2,6 +2,18 @@
 
 Openstack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
+## Compatibility
+
+Below is a listing of plugin versions and respective Velero versions for which the compatibility is tested and guaranteed.
+
+-----------------------------------
+| Plugin Version | Velero Version |
+-----------------------------------
+| v0.2.x         | v1.4.x, v1.5.x |
+-----------------------------------
+| v0.1.x         | v1.4.x, v1.5.x |
+-----------------------------------
+
 ## Configuration
 
 Configure velero container with your Openstack authentication environment variables:
