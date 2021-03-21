@@ -1,42 +1,22 @@
 # Supported tags and respective `Dockerfile` links
 
-* [`latest` (Dockerfile)](https://github.com/Lirt/velero-plugin-swift/blob/master/docker/Dockerfile)
-* [`v0.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-swift/blob/v0.1/docker/Dockerfile)
+* [`latest` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/master/docker/Dockerfile)
+* [`v0.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.1/docker/Dockerfile)
+* [`v0.1.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.1.1/docker/Dockerfile)
+* [`v0.2.0` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.2.0/docker/Dockerfile)
+* [`v0.2.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.2.1/docker/Dockerfile)
 
-# Swift plugin for Velero
+# Velero plugin for OpenStack
 
-Openstack Swift plugin for velero backups.
+Openstack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
-This image should be used as plugin for [Velero Kubernetes backup solution](https://velero.io/).
+For more documentation visit [source GitHub repository](https://github.com/Lirt/velero-plugin-for-openstack).
 
-Currently it does only backups of Kubernetes resources. Module for volume backups was not implemented yet.
+## Compatibility
 
-## Configure
+Below is a listing of plugin versions and respective Velero versions for which the compatibility is tested and guaranteed.
 
-Configure velero container with swift authentication environment variables:
-
-```bash
-export OS_AUTH_URL=<AUTH_URL /v2.0>
-export OS_USERNAME=<USERNAME>
-export OS_PASSWORD=<PASSWORD>
-export OS_REGION_NAME=<REGION>
-
-# If you want to test with unsecure certificates
-export OS_VERIFY="false"
-```
-
-Add plugin to velero:
-
-```bash
-velero plugin add lirt/velero-plugin-swift:v0.1
-```
-
-Change configuration of `backupstoragelocations.velero.io`:
-
-```yaml
- spec:
-   objectStorage:
-     # Bucket must exist beforehand
-     bucket: <BUCKET_NAME>
-   provider: swift
-```
+| Plugin Version | Velero Version |
+| :------------- | :------------- |
+| v0.2.x         | v1.4.x, v1.5.x |
+| v0.1.x         | v1.4.x, v1.5.x |
