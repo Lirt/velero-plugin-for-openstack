@@ -143,6 +143,10 @@ Please note two things regarding volume backups:
 
 Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/).
 
+## Known Issues
+
+- [Incompatibility with Cinder version 13.0.0 (Rocky)](https://github.com/Lirt/velero-plugin-for-openstack/issues/20)
+
 ## Build
 
 ```bash
