@@ -66,7 +66,7 @@ Initialize velero plugin
 ```bash
 # Initialize velero from scratch:
 velero install \
-       --provider "openstack" \
+       --provider "community.openstack.org/openstack" \
        --plugins lirt/velero-plugin-for-openstack:v0.2.1 \
        --bucket <BUCKET_NAME> \
        --no-secret
@@ -81,14 +81,14 @@ Change configuration of `backupstoragelocations.velero.io`:
  spec:
    objectStorage:
      bucket: <BUCKET_NAME>
-   provider: openstack
+   provider: community.openstack.org/openstack
 ```
 
 Change configuration of `volumesnapshotlocations.velero.io`:
 
 ```yaml
  spec:
-   provider: openstack
+   provider: community.openstack.org/openstack
 ```
 
 ### Install Using Helm Chart
@@ -104,7 +104,7 @@ To use it, first create `values.yaml` file which will later be used in helm inst
 credentials:
   extraSecretRef: "velero-credentials"
 configuration:
-  provider: openstack
+  provider: community.openstack.org/openstack
   backupStorageLocation:
     bucket: my-swift-bucket
 initContainers:
