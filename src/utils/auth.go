@@ -8,15 +8,14 @@ import (
 	"strconv"
 
 	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/utils/openstack/clientconfig"
 	"github.com/sirupsen/logrus"
 )
 
 // Authenticate to Openstack and write client result to **pc
 func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.FieldLogger) error {
 	// If service client is already initialized and contains auth result
-	// we know we were already authenticated, or the client was reauthenticated
-	// using AllowReauth
+	// we know we were already authenticated
 	if *pc != nil {
 		clientAuthResult := (*pc).GetAuthResult()
 		if clientAuthResult != nil {
@@ -25,34 +24,31 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 	}
 
 	var err error
-	var authOpts gophercloud.AuthOptions
+	var authOpts *clientconfig.AuthInfo
+	var clientOpts clientconfig.ClientOpts
 
 	if _, ok := os.LookupEnv("OS_SWIFT_AUTH_URL"); ok && service == "swift" {
-		log.Infof("Authenticating against Swift using environment variables")
-		authOpts = gophercloud.AuthOptions{
-			IdentityEndpoint: os.Getenv("OS_SWIFT_AUTH_URL"),
-			Username:         os.Getenv("OS_SWIFT_USERNAME"),
-			UserID:           os.Getenv("OS_SWIFT_USER_ID"),
-			Password:         os.Getenv("OS_SWIFT_PASSWORD"),
-			Passcode:         os.Getenv("OS_SWIFT_PASSCODE"),
-			DomainID:         os.Getenv("OS_SWIFT_DOMAIN_ID"),
-			DomainName:       os.Getenv("OS_SWIFT_DOMAIN_NAME"),
-			TenantID:         os.Getenv("OS_SWIFT_TENANT_ID"),
-			TenantName:       os.Getenv("OS_SWIFT_TENANT_NAME"),
+		log.Infof("Authenticating against Swift using special swift environment variables (see README.md)")
+		authOpts = &clientconfig.AuthInfo{
+			ApplicationCredentialID:     os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_ID"),
+			ApplicationCredentialName:   os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_NAME"),
+			ApplicationCredentialSecret: os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_SECRET"),
+			AuthURL:                     os.Getenv("OS_SWIFT_AUTH_URL"),
+			Username:                    os.Getenv("OS_SWIFT_USERNAME"),
+			UserID:                      os.Getenv("OS_SWIFT_USER_ID"),
+			Password:                    os.Getenv("OS_SWIFT_PASSWORD"),
+			DomainID:                    os.Getenv("OS_SWIFT_DOMAIN_ID"),
+			DomainName:                  os.Getenv("OS_SWIFT_DOMAIN_NAME"),
+			ProjectName:                 os.Getenv("OS_SWIFT_PROJECT_NAME"),
+			ProjectID:                   os.Getenv("OS_SWIFT_PROJECT_ID"),
+			UserDomainName:              os.Getenv("OS_SWIFT_USER_DOMAIN_NAME"),
+			UserDomainID:                os.Getenv("OS_SWIFT_USER_DOMAIN_ID"),
+			ProjectDomainName:           os.Getenv("OS_SWIFT_PROJECT_DOMAIN_NAME"),
+			ProjectDomainID:             os.Getenv("OS_SWIFT_PROJECT_DOMAIN_ID"),
 		}
+		clientOpts.AuthInfo = authOpts
 	} else {
-		log.Infof("Authenticating against Openstack using environment variables")
-		authOpts, err = openstack.AuthOptionsFromEnv()
-		if err != nil {
-			return err
-		}
-	}
-
-	authOpts.AllowReauth = true
-
-	*pc, err = openstack.NewClient(authOpts.IdentityEndpoint)
-	if err != nil {
-		return err
+		log.Infof("Trying to authenticate against Openstack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
 	}
 
 	tlsVerify, err := strconv.ParseBool(GetEnv("OS_VERIFY", "true"))
@@ -63,11 +59,12 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 	tlsconfig := &tls.Config{}
 	tlsconfig.InsecureSkipVerify = tlsVerify
 	transport := &http.Transport{TLSClientConfig: tlsconfig}
-	(*pc).HTTPClient = http.Client{
+	clientOpts.HTTPClient = &http.Client{
 		Transport: transport,
 	}
 
-	if err := openstack.Authenticate(*pc, authOpts); err != nil {
+	*pc, err = clientconfig.AuthenticatedClient(&clientOpts)
+	if err != nil {
 		return err
 	}
 	log.Infof("Authentication successful")

@@ -20,10 +20,23 @@ Below is a listing of plugin versions and respective Velero versions for which t
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
+| v0.3.x         | v1.4.x, v1.5.x |
 | v0.2.x         | v1.4.x, v1.5.x |
 | v0.1.x         | v1.4.x, v1.5.x |
 
-## Configuration
+## Openstack Authentication Configuration
+
+The order of authentication methods is following:
+1. Authentication using environment variables takes precedence (including [Application Credentials](https://docs.openstack.org/keystone/queens/user/application_credentials.html#using-application-credentials)). You **must not** set env. variable `OS_CLOUD` when you want to authenticate using env. variables because authenticator will try to look for `clouds.y(a)ml` file and use it.
+1. Authentication using files is second option. Note: you will also need to set `OS_CLOUD` environment variable to tell which cloud from `clouds.y(a)ml` will be used:
+  1. If `OS_CLIENT_CONFIG_FILE` env. variable is specified, code will authenticate using this file.
+  1. Look for file `clouds.y(a)ml` in current directory.
+  1. Look for file in `~/.config/openstack/clouds.y(a)ml`.
+  1. Look for file in `/etc/openstack/clouds.y(a)ml`.
+
+For authentication using application credentials you need to first create them using openstack CLI command such as `openstack application credential create <NAME>`.
+
+### Authentication using environment variable
 
 Configure velero container with your Openstack authentication environment variables:
 
@@ -43,6 +56,12 @@ export OS_PROJECT_NAME=<PROJECT_NAME>
 export OS_REGION_NAME=<REGION_NAME>
 export OS_DOMAIN_NAME=<DOMAIN_NAME OR OS_USER_DOMAIN_NAME>
 
+# Keystone v3 with Authentication Credentials
+export OS_AUTH_URL=<AUTH_URL /v3>
+export OS_APPLICATION_CREDENTIAL_ID=<APP_CRED_ID>
+export OS_APPLICATION_CREDENTIAL_NAME=<APP_CRED_NAME>
+export OS_APPLICATION_CREDENTIAL_SECRET=<APP_CRED_SECRET>
+
 # If you want to test with unsecure certificates
 export OS_VERIFY="false"
 ```
@@ -59,20 +78,52 @@ export OS_SWIFT_TENANT_NAME=<TENANT_NAME>
 export OS_SWIFT_USERNAME=<USERNAME>
 ```
 
+### Authentication using file
+
+You can authenticate with this plugin also using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
+
+Easiest is to create file `/etc/openstack/clouds.y(a)ml` with content like this:
+
+```yaml
+clouds:
+  <CLOUD_NAME>:
+    region_name: <REGION_NAME>
+    auth:
+      auth_url: "<AUTH_URL /v3>"
+      username: <USERNAME>
+      password: <PASSWORD>
+      project_name: <PROJECT_NAME>
+      project_domain_name: <PROJECT_DOMAIN_NAME>
+      user_domain_name: <USER_DOMAIN_NAME>
+```
+
+Or when authenticating using [Application Credentials](https://docs.openstack.org/keystone/queens/user/application_credentials.html#using-application-credentials) use file content like this:
+
+```yaml
+clouds:
+  <CLOUD_NAME>:
+    region_name: <REGION_NAME>
+    auth:
+      auth_url: "<AUTH_URL /v3>"
+      application_credential_name: <APPLICATION_CREDENTIAL_NAME>
+      application_credential_id: <APPLICATION_CREDENTIAL_ID>
+      application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
+```
+
 ### Install Using Velero CLI
 
-Initialize velero plugin
+Initialize velero plugin:
 
 ```bash
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.2.1 \
+       --plugins lirt/velero-plugin-for-openstack:v0.3.0 \
        --bucket <BUCKET_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.2.1
+velero plugin add lirt/velero-plugin-for-openstack:v0.3.0
 ```
 
 Change configuration of `backupstoragelocations.velero.io`:
@@ -109,7 +160,7 @@ configuration:
     bucket: my-swift-bucket
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.2.1
+  image: lirt/velero-plugin-for-openstack:v0.3.0
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
