@@ -70,6 +70,7 @@ export OS_APPLICATION_CREDENTIAL_SECRET=<APP_CRED_SECRET>
 
 # If you want to test with unsecure certificates
 export OS_VERIFY="false"
+export TLS_SKIP_VERIFY="true"
 ```
 
 If your Openstack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder:
