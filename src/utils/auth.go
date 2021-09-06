@@ -51,13 +51,15 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 		log.Infof("Trying to authenticate against Openstack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
 	}
 
+	allowReauth := true
+	authOpts.AllowReauth = &allowReauth
+
 	tlsVerify, err := strconv.ParseBool(GetEnv("TLS_SKIP_VERIFY", "false"))
 	if err != nil {
 		return fmt.Errorf("cannot parse boolean from TLS_SKIP_VERIFY environment variable: %v", err)
 	}
 
-	tlsConfig := &tls.Config{}
-	tlsConfig.InsecureSkipVerify = tlsVerify
+	tlsConfig := &tls.Config{InsecureSkipVerify: tlsVerify}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsConfig
 	clientOpts.HTTPClient = &http.Client{Transport: transport}

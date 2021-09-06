@@ -1,6 +1,6 @@
 module github.com/Lirt/velero-plugin-swift
 
-go 1.14
+go 1.16
 
 require (
 	github.com/gophercloud/gophercloud v0.20.0
@@ -14,3 +14,5 @@ require (
 	k8s.io/api v0.17.4
 	k8s.io/apimachinery v0.17.4
 )
+
+replace github.com/gophercloud/utils v0.0.0-20210823151123-bfd010397530 => github.com/Lirt/utils v0.0.0-20210906203916-134a87dedc87
