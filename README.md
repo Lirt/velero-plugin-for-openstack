@@ -2,14 +2,20 @@
 
 Openstack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
+This plugin is [included as community supported plugin by Velero organization](https://velero.io/plugins/).
+
 ## Table of Contents
 
 - [Velero Plugin for Openstack](#velero-plugin-for-openstack)
   - [Compatibility](#compatibility)
-  - [Configuration](#configuration)
-    - [Install Using Velero CLI](#install-using-velero-cli)
+  - [Openstack Authentication Configuration](#openstack-authentication-configuration)
+    - [Authentication using environment variables](#authentication-using-environment-variables)
+    - [Authentication using file](#authentication-using-file)
+  - [Installation](#installation)
+    - [Install using Velero CLI](#install-using-velero-cli)
     - [Install Using Helm Chart](#install-using-helm-chart)
   - [Volume Backups](#volume-backups)
+  - [Known Issues](#known-issues)
   - [Build](#build)
   - [Test](#test)
   - [Development](#development)
@@ -36,7 +42,7 @@ The order of authentication methods is following:
 
 For authentication using application credentials you need to first create them using openstack CLI command such as `openstack application credential create <NAME>`.
 
-### Authentication using environment variable
+### Authentication using environment variables
 
 Configure velero container with your Openstack authentication environment variables:
 
@@ -110,7 +116,9 @@ clouds:
       application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
 ```
 
-### Install Using Velero CLI
+## Installation
+
+### Install using Velero CLI
 
 Initialize velero plugin:
 
@@ -158,6 +166,7 @@ configuration:
   provider: community.openstack.org/openstack
   backupStorageLocation:
     bucket: my-swift-bucket
+    # caCert: <CERT_CONTENTS_IN_BASE64>
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.3.0
@@ -167,7 +176,6 @@ initContainers:
       name: plugins
 snapshotsEnabled: true
 backupsEnabled: true
-# caCert: <CERT_CONTENTS_IN_BASE64>
 ```
 
 Make sure that secret `velero-credentials` exists and has proper format and content.
