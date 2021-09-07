@@ -24,7 +24,6 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 	}
 
 	var err error
-	var authOpts *clientconfig.AuthInfo
 	var clientOpts clientconfig.ClientOpts
 
 	// Set default for AllowReauth
@@ -32,7 +31,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 
 	if _, ok := os.LookupEnv("OS_SWIFT_AUTH_URL"); ok && service == "swift" {
 		log.Infof("Authenticating against Swift using special swift environment variables (see README.md)")
-		authOpts = &clientconfig.AuthInfo{
+		clientOpts.AuthInfo = &clientconfig.AuthInfo{
 			ApplicationCredentialID:     os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_ID"),
 			ApplicationCredentialName:   os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_NAME"),
 			ApplicationCredentialSecret: os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_SECRET"),
@@ -50,10 +49,9 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 			ProjectDomainID:             os.Getenv("OS_SWIFT_PROJECT_DOMAIN_ID"),
 			AllowReauth:                 &allowReauth,
 		}
-		clientOpts.AuthInfo = authOpts
 	} else {
 		log.Infof("Trying to authenticate against Openstack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
-		authOpts = &clientconfig.AuthInfo{
+		clientOpts.AuthInfo = &clientconfig.AuthInfo{
 			AllowReauth: &allowReauth,
 		}
 	}
