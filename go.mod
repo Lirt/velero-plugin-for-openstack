@@ -15,4 +15,4 @@ require (
 	k8s.io/apimachinery v0.17.4
 )
 
-replace github.com/gophercloud/utils v0.0.0-20210823151123-bfd010397530 => github.com/Lirt/utils v0.0.0-20210906203916-134a87dedc87
+replace github.com/gophercloud/utils v0.0.0-20210823151123-bfd010397530 => github.com/Lirt/utils v0.0.0-20210907104706-22fa69da6661

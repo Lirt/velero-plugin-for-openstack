@@ -47,12 +47,12 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 			UserDomainID:                os.Getenv("OS_SWIFT_USER_DOMAIN_ID"),
 			ProjectDomainName:           os.Getenv("OS_SWIFT_PROJECT_DOMAIN_NAME"),
 			ProjectDomainID:             os.Getenv("OS_SWIFT_PROJECT_DOMAIN_ID"),
-			AllowReauth:                 &allowReauth,
+			AllowReauth:                 allowReauth,
 		}
 	} else {
 		log.Infof("Trying to authenticate against Openstack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
 		clientOpts.AuthInfo = &clientconfig.AuthInfo{
-			AllowReauth: &allowReauth,
+			AllowReauth: allowReauth,
 		}
 	}
 
