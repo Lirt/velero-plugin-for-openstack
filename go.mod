@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/gophercloud/gophercloud v0.20.0
-	github.com/gophercloud/utils v0.0.0-20210823151123-bfd010397530
+	github.com/gophercloud/utils v0.0.0-20210909165623-d7085207ff6d
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.6.0
