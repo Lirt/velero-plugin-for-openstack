@@ -2,14 +2,20 @@
 
 Openstack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
+This plugin is [included as community supported plugin by Velero organization](https://velero.io/plugins/).
+
 ## Table of Contents
 
 - [Velero Plugin for Openstack](#velero-plugin-for-openstack)
   - [Compatibility](#compatibility)
-  - [Configuration](#configuration)
-    - [Install Using Velero CLI](#install-using-velero-cli)
+  - [Openstack Authentication Configuration](#openstack-authentication-configuration)
+    - [Authentication using environment variables](#authentication-using-environment-variables)
+    - [Authentication using file](#authentication-using-file)
+  - [Installation](#installation)
+    - [Install using Velero CLI](#install-using-velero-cli)
     - [Install Using Helm Chart](#install-using-helm-chart)
   - [Volume Backups](#volume-backups)
+  - [Known Issues](#known-issues)
   - [Build](#build)
   - [Test](#test)
   - [Development](#development)
@@ -20,10 +26,23 @@ Below is a listing of plugin versions and respective Velero versions for which t
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
+| v0.3.x         | v1.4.x, v1.5.x, v1.6.x |
 | v0.2.x         | v1.4.x, v1.5.x |
 | v0.1.x         | v1.4.x, v1.5.x |
 
-## Configuration
+## Openstack Authentication Configuration
+
+The order of authentication methods is following:
+1. Authentication using environment variables takes precedence (including [Application Credentials](https://docs.openstack.org/keystone/queens/user/application_credentials.html#using-application-credentials)). You **must not** set env. variable `OS_CLOUD` when you want to authenticate using env. variables because authenticator will try to look for `clouds.y(a)ml` file and use it.
+1. Authentication using files is second option. Note: you will also need to set `OS_CLOUD` environment variable to tell which cloud from `clouds.y(a)ml` will be used:
+  1. If `OS_CLIENT_CONFIG_FILE` env. variable is specified, code will authenticate using this file.
+  1. Look for file `clouds.y(a)ml` in current directory.
+  1. Look for file in `~/.config/openstack/clouds.y(a)ml`.
+  1. Look for file in `/etc/openstack/clouds.y(a)ml`.
+
+For authentication using application credentials you need to first create them using openstack CLI command such as `openstack application credential create <NAME>`.
+
+### Authentication using environment variables
 
 Configure velero container with your Openstack authentication environment variables:
 
@@ -43,8 +62,15 @@ export OS_PROJECT_NAME=<PROJECT_NAME>
 export OS_REGION_NAME=<REGION_NAME>
 export OS_DOMAIN_NAME=<DOMAIN_NAME OR OS_USER_DOMAIN_NAME>
 
+# Keystone v3 with Authentication Credentials
+export OS_AUTH_URL=<AUTH_URL /v3>
+export OS_APPLICATION_CREDENTIAL_ID=<APP_CRED_ID>
+export OS_APPLICATION_CREDENTIAL_NAME=<APP_CRED_NAME>
+export OS_APPLICATION_CREDENTIAL_SECRET=<APP_CRED_SECRET>
+
 # If you want to test with unsecure certificates
 export OS_VERIFY="false"
+export TLS_SKIP_VERIFY="true"
 ```
 
 If your Openstack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder:
@@ -59,20 +85,54 @@ export OS_SWIFT_TENANT_NAME=<TENANT_NAME>
 export OS_SWIFT_USERNAME=<USERNAME>
 ```
 
-### Install Using Velero CLI
+### Authentication using file
 
-Initialize velero plugin
+You can authenticate with this plugin also using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
+
+Easiest is to create file `/etc/openstack/clouds.y(a)ml` with content like this:
+
+```yaml
+clouds:
+  <CLOUD_NAME>:
+    region_name: <REGION_NAME>
+    auth:
+      auth_url: "<AUTH_URL /v3>"
+      username: <USERNAME>
+      password: <PASSWORD>
+      project_name: <PROJECT_NAME>
+      project_domain_name: <PROJECT_DOMAIN_NAME>
+      user_domain_name: <USER_DOMAIN_NAME>
+```
+
+Or when authenticating using [Application Credentials](https://docs.openstack.org/keystone/queens/user/application_credentials.html#using-application-credentials) use file content like this:
+
+```yaml
+clouds:
+  <CLOUD_NAME>:
+    region_name: <REGION_NAME>
+    auth:
+      auth_url: "<AUTH_URL /v3>"
+      application_credential_name: <APPLICATION_CREDENTIAL_NAME>
+      application_credential_id: <APPLICATION_CREDENTIAL_ID>
+      application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
+```
+
+## Installation
+
+### Install using Velero CLI
+
+Initialize velero plugin:
 
 ```bash
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.2.1 \
+       --plugins lirt/velero-plugin-for-openstack:v0.3.0 \
        --bucket <BUCKET_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.2.1
+velero plugin add lirt/velero-plugin-for-openstack:v0.3.0
 ```
 
 Change configuration of `backupstoragelocations.velero.io`:
@@ -107,16 +167,16 @@ configuration:
   provider: community.openstack.org/openstack
   backupStorageLocation:
     bucket: my-swift-bucket
+    # caCert: <CERT_CONTENTS_IN_BASE64>
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.2.1
+  image: lirt/velero-plugin-for-openstack:v0.3.0
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
       name: plugins
 snapshotsEnabled: true
 backupsEnabled: true
-# caCert: <CERT_CONTENTS_IN_BASE64>
 ```
 
 Make sure that secret `velero-credentials` exists and has proper format and content.
