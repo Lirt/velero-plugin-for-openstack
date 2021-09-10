@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 	"github.com/sirupsen/logrus"
 )
@@ -45,9 +44,13 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 			UserDomainID:                os.Getenv("OS_SWIFT_USER_DOMAIN_ID"),
 			ProjectDomainName:           os.Getenv("OS_SWIFT_PROJECT_DOMAIN_NAME"),
 			ProjectDomainID:             os.Getenv("OS_SWIFT_PROJECT_DOMAIN_ID"),
+			AllowReauth:                 true,
 		}
 	} else {
 		log.Infof("Trying to authenticate against Openstack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
+		clientOpts.AuthInfo = &clientconfig.AuthInfo{
+			AllowReauth: true,
+		}
 	}
 
 	tlsVerify, err := strconv.ParseBool(GetEnv("TLS_SKIP_VERIFY", "false"))
@@ -60,13 +63,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 	transport.TLSClientConfig = tlsConfig
 	clientOpts.HTTPClient = &http.Client{Transport: transport}
 
-	ao, err := clientconfig.AuthOptions(&clientOpts)
-	ao.AllowReauth = true
-	if err != nil {
-		return fmt.Errorf("failed to parse authentication options from environment variables or files: %v", err)
-	}
-
-	*pc, err = openstack.AuthenticatedClient(*ao)
+	*pc, err = clientconfig.AuthenticatedClient(&clientOpts)
 	if err != nil {
 		return err
 	}
