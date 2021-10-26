@@ -135,6 +135,8 @@ velero install \
 velero plugin add lirt/velero-plugin-for-openstack:v0.3.0
 ```
 
+Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.3.0-arm64`.
+
 Change configuration of `backupstoragelocations.velero.io`:
 
 ```yaml
@@ -214,8 +216,24 @@ Volume backups with Velero can also be done using [Restic](https://velero.io/doc
 go mod tidy
 go build
 
-# Build image
-docker build --file docker/Dockerfile --tag velero-plugin-for-openstack:my-test-tag .
+# Build image for Linux amd64
+docker build --file docker/Dockerfile \
+             --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+             .
+
+# Build image for linux arm
+docker build --file docker/Dockerfile \
+             --tag lirt/velero-plugin-for-openstack:v0.3.0-arm \
+             --build-arg GOOS="linux" \
+             --build-arg GOARCH="arm" \
+             .
+
+# Build image for linux arm64
+docker build --file docker/Dockerfile \
+             --tag lirt/velero-plugin-for-openstack:v0.3.0-arm64 \
+             --build-arg GOOS="linux" \
+             --build-arg GOARCH="arm64" \
+             .
 ```
 
 ## Test
