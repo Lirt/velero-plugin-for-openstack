@@ -18,7 +18,7 @@ RUN export GOOS=${GOOS}; \
       .
 
 # --- Second stage
-FROM alpine:3
+FROM --platform=${GOOS}/${GOARCH} alpine:3
 RUN mkdir /plugins
 COPY --from=build /go/bin/${PLUGIN} /plugins/
 USER nobody:nogroup
