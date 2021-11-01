@@ -1,10 +1,11 @@
+ARG GOOS=linux
+ARG GOARCH=amd64
+
 # --- First stage
 FROM golang:1.16-alpine AS build
 
 ARG REPOSITORY=Lirt
 ARG PLUGIN=velero-plugin-swift
-ARG GOOS=linux
-ARG GOARCH=amd64
 
 ENV GOPROXY=https://proxy.golang.org
 
