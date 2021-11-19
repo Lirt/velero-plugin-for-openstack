@@ -188,7 +188,7 @@ func (b *BlockStore) GetVolumeID(unstructuredPV runtime.Unstructured) (string, e
 
 	if pv.Spec.Cinder != nil {
 		volumeID = pv.Spec.Cinder.VolumeID
-	} else if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" {
+	} else if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" || pv.Spec.CSI.Driver == "disk.csi.everest.io" {
 		volumeID = pv.Spec.CSI.VolumeHandle
 	}
 
