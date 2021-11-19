@@ -216,24 +216,32 @@ Volume backups with Velero can also be done using [Restic](https://velero.io/doc
 go mod tidy
 go build
 
-# Build image for Linux amd64
-docker build --file docker/Dockerfile \
-             --tag lirt/velero-plugin-for-openstack:v0.3.0 \
-             .
+# Build image
+docker buildx --file docker/Dockerfile \
+              --platform "linux/amd64" \
+              --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+              --load \
+              .
 
-# Build image for linux arm
-docker build --file docker/Dockerfile \
-             --tag lirt/velero-plugin-for-openstack:v0.3.0-arm \
-             --build-arg GOOS="linux" \
-             --build-arg GOARCH="arm" \
-             .
+# Build and push image for linux amd64, arm64, arm
+docker buildx build \
+              --file docker/Dockerfile \
+              --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
+              --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+              --push \
+              .
 
-# Build image for linux arm64
-docker build --file docker/Dockerfile \
-             --tag lirt/velero-plugin-for-openstack:v0.3.0-arm64 \
-             --build-arg GOOS="linux" \
-             --build-arg GOARCH="arm64" \
-             .
+# Build one platform by one for local build.
+# Building all with --load cannot be done until docker fixes it.
+# GitHub issue: https://github.com/docker/buildx/issues/59
+for platform in linux/amd64 linux/arm/v6 linux/arm/v7 linux/arm64; do
+    docker buildx build \
+                  --file docker/Dockerfile \
+                  --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+                  --platform "${platform}" \
+                  --load \
+                  .
+done
 ```
 
 ## Test
