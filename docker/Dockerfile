@@ -28,7 +28,7 @@ RUN export GOARM=$( echo "${GOARM}" | cut -c2-) && \
       .
 
 # --- Second stage
-FROM --platform=$BUILDPLATFORM alpine:3
+FROM alpine:3
 RUN mkdir /plugins
 COPY --from=build /go/bin/${PLUGIN} /plugins/
 USER nobody:nogroup
