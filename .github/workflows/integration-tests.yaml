@@ -1,0 +1,60 @@
+---
+name: Integration tests with Kind and DevStack
+on:
+  push
+jobs:
+  unit:
+    name: "Integration tests (go v${{ matrix.perl-version }})"
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        go-version: [ '1.16' ]
+    steps:
+      - name: Checkout velero-plugin-for-openstack
+        uses: actions/checkout@v3
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Build Docker image
+        run: |
+          docker buildx build \
+                 --file docker/Dockerfile \
+                 --tag "velero-plugin-for-openstack:${GITHUB_SHA}" \
+                 --platform linux/amd64 \
+                 --load \
+                 .
+      - name: Install Kind
+        uses: helm/kind-action@v1.4.0
+        with:
+          version: v0.16.0
+          wait: 120s
+          cluster_name: kind
+      - name: Load new velero-plugin-openstack image to kind
+        run: |
+          kind load docker-image "velero-plugin-for-openstack:${GITHUB_SHA}"
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.10.0'
+      - name: Install Velero using Helm
+        run: |
+          # export IMAGE_NAME=velero-plugin-for-openstack
+          # export IMAGE_TAG=${GITHUB_SHA}
+          helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
+          helm repo update
+          helm install velero vmware-tanzu/velero \
+               --namespace velero \
+               --create-namespace \
+               --version 2.29.8 \
+               --values velero-helm-values.yaml \
+               --set "initContainers[0].image=velero-plugin-for-openstack:${GITHUB_SHA}" \
+               --wait
+      - name: Deploy DevStack
+        uses: EmilienM/devstack-action@v0.7
+        with:
+          openstack_version: "stable/yoga"
+          enabled_services: 's-account,s-container,s-object,s-proxy,c-bak'
+          conf_overrides: |
+            SWIFT_ENABLE_TEMPURLS=True
+            SWIFT_TEMPURL_KEY=secretkey
