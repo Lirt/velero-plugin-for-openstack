@@ -22,7 +22,7 @@ This plugin is [included as community supported plugin by Velero organization](h
 
 ## Compatibility
 
-Below is a listing of plugin versions and respective Velero versions for which the compatibility is tested and guaranteed.
+Below is a matrix of plugin versions and Velero versions for which the compatibility is tested and guaranteed.
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
@@ -42,7 +42,7 @@ The order of authentication methods is following:
 
 For authentication using application credentials you need to first create them using openstack CLI command such as `openstack application credential create <NAME>`.
 
-### Authentication using environment variables
+### Authentication using Environment Variables
 
 Configure velero container with your Openstack authentication environment variables:
 
@@ -87,9 +87,9 @@ export OS_SWIFT_USERNAME=<USERNAME>
 
 ### Authentication using file
 
-You can authenticate with this plugin also using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
+You can also authenticate using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
 
-Easiest is to create file `/etc/openstack/clouds.y(a)ml` with content like this:
+Easiest way is to create file `/etc/openstack/clouds.y(a)ml` with content like this:
 
 ```yaml
 clouds:
