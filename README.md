@@ -205,6 +205,8 @@ Please note two things regarding volume backups:
 
 Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/).
 
+Alternative Kubernetes native solution (GA since 1.20) for volume snapshots (not backups) are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
+
 ## Known Issues
 
 - [Incompatibility with Cinder version 13.0.0 (Rocky)](https://github.com/Lirt/velero-plugin-for-openstack/issues/20)
