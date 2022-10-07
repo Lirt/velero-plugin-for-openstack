@@ -194,7 +194,7 @@ helm upgrade \
      --install \
      --namespace velero \
      --values values.yaml \
-     --version 2.15.0
+     --version 2.29.8
 ```
 
 ## Volume Backups
