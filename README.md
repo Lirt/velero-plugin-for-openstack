@@ -127,15 +127,15 @@ Initialize velero plugin:
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.3.0 \
+       --plugins lirt/velero-plugin-for-openstack:v0.3.1 \
        --bucket <BUCKET_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.3.0
+velero plugin add lirt/velero-plugin-for-openstack:v0.3.1
 ```
 
-Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.3.0-arm64`.
+Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.3.1-arm64`.
 
 Change configuration of `backupstoragelocations.velero.io`:
 
@@ -172,7 +172,7 @@ configuration:
     # caCert: <CERT_CONTENTS_IN_BASE64>
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.3.0
+  image: lirt/velero-plugin-for-openstack:v0.3.1
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
@@ -219,7 +219,7 @@ go build
 # Build image
 docker buildx --file docker/Dockerfile \
               --platform "linux/amd64" \
-              --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.3.1 \
               --load \
               .
 
@@ -227,7 +227,7 @@ docker buildx --file docker/Dockerfile \
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.3.1 \
               --push \
               .
 
@@ -237,7 +237,7 @@ docker buildx build \
 for platform in linux/amd64 linux/arm/v6 linux/arm/v7 linux/arm64; do
     docker buildx build \
                   --file docker/Dockerfile \
-                  --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+                  --tag lirt/velero-plugin-for-openstack:v0.3.1 \
                   --platform "${platform}" \
                   --load \
                   .
