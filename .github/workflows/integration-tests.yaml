@@ -37,6 +37,12 @@ jobs:
         uses: azure/setup-helm@v3
         with:
           version: 'v3.10.0'
+      - name: Install Velero CLI 1.8.1
+        run: |
+          wget https://github.com/vmware-tanzu/velero/releases/download/v1.8.1/velero-v1.8.1-linux-amd64.tar.gz
+          tar -zxvf velero-v1.8.1-linux-amd64.tar.gz
+          sudo mv velero-v1.8.1-linux-amd64/velero /usr/local/bin/velero
+          chmod 750 /usr/local/bin/velero
       - name: Install Velero using Helm
         run: |
           # export IMAGE_NAME=velero-plugin-for-openstack
