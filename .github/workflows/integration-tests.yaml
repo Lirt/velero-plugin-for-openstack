@@ -9,6 +9,16 @@ jobs:
     strategy:
       matrix:
         go-version: [ '1.16' ]
+    env:
+      VELERO_CLI_VERSION: 1.8.1
+      # Contains Velero 1.8.1
+      VELERO_CHART_VERSION: 2.29.8
+      VELERO_BACKUP_NAME: my-test-backup-01
+      # From tag 1.25.0
+      CINDER_CSI_CHART_VERSION: 2.2.0
+      DOCKER_IMAGE_NAME: velero-plugin-for-openstack
+      SWIFT_BUCKET_NAME: my-swift-bucket
+      TESTS_DIRECTORY: tests/actions/integration-tests
     steps:
       - name: Checkout velero-plugin-for-openstack
         uses: actions/checkout@v3
@@ -20,46 +30,98 @@ jobs:
         run: |
           docker buildx build \
                  --file docker/Dockerfile \
-                 --tag "velero-plugin-for-openstack:${GITHUB_SHA}" \
+                 --tag "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
                  --platform linux/amd64 \
                  --load \
                  .
       - name: Install Kind
         uses: helm/kind-action@v1.4.0
         with:
+          # Kubernetes 1.25.x
           version: v0.16.0
-          wait: 120s
           cluster_name: kind
-      - name: Load new velero-plugin-openstack image to kind
+          wait: 120s
+      - name: Load new plugin image to kind cluster
         run: |
-          kind load docker-image "velero-plugin-for-openstack:${GITHUB_SHA}"
+          kind load docker-image "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}"
       - name: Install Helm
         uses: azure/setup-helm@v3
         with:
           version: 'v3.10.0'
-      - name: Install Velero CLI 1.8.1
+      - name: Install Velero CLI
+        env:
         run: |
-          wget https://github.com/vmware-tanzu/velero/releases/download/v1.8.1/velero-v1.8.1-linux-amd64.tar.gz
-          tar -zxvf velero-v1.8.1-linux-amd64.tar.gz
-          sudo mv velero-v1.8.1-linux-amd64/velero /usr/local/bin/velero
+          wget --quiet "https://github.com/vmware-tanzu/velero/releases/download/v${VELERO_CLI_VERSION}/velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
+          tar -zxvf "velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
+          sudo mv "velero-v${VELERO_CLI_VERSION}-linux-amd64/velero" /usr/local/bin/velero
           chmod 750 /usr/local/bin/velero
-      - name: Install Velero using Helm
+      # - name: Deploy DevStack
+      #   uses: EmilienM/devstack-action@v0.7
+      #   with:
+      #     branch: "stable/yoga"
+      #     conf_overrides: |
+      #       SWIFT_ENABLE_TEMPURLS=True
+      #       SWIFT_TEMPURL_KEY=secretkey
+      #       SWIFT_HASH=12394u39845623984j28hf93d9173
+      #       SWIFT_DEFAULT_BIND_PORT=15492
+      #       SERVICE_TIMEOUT=200
+      #       disable_all_services
+      #       enable_service key mysql s-proxy s-object s-container s-account c-bak c-api c-vol c-sch
+      - name: Install python pip
+        run: python -m pip install --upgrade pip
+        shell: bash
+      - name: Erase MySQL package
+        run: sudo apt-get purge mysql-* || true
+        shell: bash
+      # This is to avoid RabbitMQ to fail at startup because a wrong version of erlang was installed
+      - name: Workaround for RabbitMQ
         run: |
+          sudo apt-get purge -y esl-erlang || true
+          sudo apt-get install -y erlang rabbitmq-server || true
+        shell: bash
+      - name: Remove unwanted packages
+        run: |
+          sudo apt-get purge -y python3-simplejson python3-pyasn1-modules postgresql* || true
+        shell: bash
+      - name: Checkout Devstack
+        uses: actions/checkout@v2
+        with:
+          ref: stable/yoga
+          repository: openstack/devstack
+          path: ./devstack
+      - name: Deploy devstack
+        run: |
+          cp "../${TESTS_DIRECTORY}/local.conf"
+          ./stack.sh
+        working-directory: ./devstack
+        shell: bash
+      - name: Prepare Swift bucket for velero backups
+        run: |
+          source "${{ github.workspace }}/devstack/openrc"
+          SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
+          swift post "${SWIFT_BUCKET_NAME}"
+          swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
+      - name: Install Velero helm chart
+        run: |
+          export HOST_IP=$(hostname -I | awk '{print $1}')
+          export OS_AUTH_URL=$(echo -n "http://${HOST_IP}/identity" | base64)
+          envsubst < "${TESTS_DIRECTORY}/velero-credentials.yaml" > "${TESTS_DIRECTORY}/velero-credentials-templated.yaml"
+          kubectl create namespace velero
+          kubectl apply -f "${TESTS_DIRECTORY}/velero-credentials-templated.yaml"
           helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
           helm repo update
           helm install velero vmware-tanzu/velero \
                --namespace velero \
-               --create-namespace \
-               --version 2.29.8 \
-               --values tests/velero-helm-values.yaml \
-               --set "initContainers[0].image=velero-plugin-for-openstack:${GITHUB_SHA}" \
+               --version "${VELERO_CHART_VERSION}" \
+               --values "${TESTS_DIRECTORY}/velero-helm-values.yaml" \
+               --set "initContainers[0].image=${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+               --timeout 10m \
                --wait \
                --wait-for-jobs
-      - name: Deploy DevStack
-        uses: EmilienM/devstack-action@v0.7
-        with:
-          openstack_version: "stable/yoga"
-          enabled_services: 's-account,s-container,s-object,s-proxy,c-bak'
-          conf_overrides: |
-            SWIFT_ENABLE_TEMPURLS=True
-            SWIFT_TEMPURL_KEY=secretkey
+      - name: Create test backup and validate it
+        run: |
+          velero backup create "${VELERO_BACKUP_NAME}"
+          sleep 120
+          kubectl logs -n velero -l app.kubernetes.io/name=velero
+          velero describe backups "${VELERO_BACKUP_NAME}"
+          velero backup logs "${VELERO_BACKUP_NAME}"
