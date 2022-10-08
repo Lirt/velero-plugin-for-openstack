@@ -4,7 +4,7 @@ on:
   push
 jobs:
   unit:
-    name: "Integration tests (go v${{ matrix.perl-version }})"
+    name: "Integration tests (go v${{ matrix.go-version }})"
     runs-on: ubuntu-20.04
     strategy:
       matrix:
