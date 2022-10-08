@@ -45,17 +45,16 @@ jobs:
           chmod 750 /usr/local/bin/velero
       - name: Install Velero using Helm
         run: |
-          # export IMAGE_NAME=velero-plugin-for-openstack
-          # export IMAGE_TAG=${GITHUB_SHA}
           helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
           helm repo update
           helm install velero vmware-tanzu/velero \
                --namespace velero \
                --create-namespace \
                --version 2.29.8 \
-               --values velero-helm-values.yaml \
+               --values tests/velero-helm-values.yaml \
                --set "initContainers[0].image=velero-plugin-for-openstack:${GITHUB_SHA}" \
-               --wait
+               --wait \
+               --wait-for-jobs
       - name: Deploy DevStack
         uses: EmilienM/devstack-action@v0.7
         with:
