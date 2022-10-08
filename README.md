@@ -22,11 +22,11 @@ This plugin is [included as community supported plugin by Velero organization](h
 
 ## Compatibility
 
-Below is a listing of plugin versions and respective Velero versions for which the compatibility is tested and guaranteed.
+Below is a matrix of plugin versions and Velero versions for which the compatibility is tested and guaranteed.
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
-| v0.3.x         | v1.4.x, v1.5.x, v1.6.x |
+| v0.3.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x |
 | v0.2.x         | v1.4.x, v1.5.x |
 | v0.1.x         | v1.4.x, v1.5.x |
 
@@ -42,7 +42,7 @@ The order of authentication methods is following:
 
 For authentication using application credentials you need to first create them using openstack CLI command such as `openstack application credential create <NAME>`.
 
-### Authentication using environment variables
+### Authentication using Environment Variables
 
 Configure velero container with your Openstack authentication environment variables:
 
@@ -87,9 +87,9 @@ export OS_SWIFT_USERNAME=<USERNAME>
 
 ### Authentication using file
 
-You can authenticate with this plugin also using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
+You can also authenticate using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
 
-Easiest is to create file `/etc/openstack/clouds.y(a)ml` with content like this:
+Easiest way is to create file `/etc/openstack/clouds.y(a)ml` with content like this:
 
 ```yaml
 clouds:
@@ -127,15 +127,15 @@ Initialize velero plugin:
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.3.0 \
+       --plugins lirt/velero-plugin-for-openstack:v0.3.1 \
        --bucket <BUCKET_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.3.0
+velero plugin add lirt/velero-plugin-for-openstack:v0.3.1
 ```
 
-Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.3.0-arm64`.
+Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.3.1-arm64`.
 
 Change configuration of `backupstoragelocations.velero.io`:
 
@@ -172,7 +172,7 @@ configuration:
     # caCert: <CERT_CONTENTS_IN_BASE64>
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.3.0
+  image: lirt/velero-plugin-for-openstack:v0.3.1
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
@@ -194,7 +194,7 @@ helm upgrade \
      --install \
      --namespace velero \
      --values values.yaml \
-     --version 2.15.0
+     --version 2.29.8
 ```
 
 ## Volume Backups
@@ -204,6 +204,8 @@ Please note two things regarding volume backups:
 2. Snapshots in the cinder backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder backend creates durable snapshots with your cloud provider.
 
 Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/).
+
+Alternative Kubernetes native solution (GA since 1.20) for volume snapshots (not backups) are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
 
 ## Known Issues
 
@@ -219,7 +221,7 @@ go build
 # Build image
 docker buildx --file docker/Dockerfile \
               --platform "linux/amd64" \
-              --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.3.1 \
               --load \
               .
 
@@ -227,7 +229,7 @@ docker buildx --file docker/Dockerfile \
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.3.1 \
               --push \
               .
 
@@ -237,7 +239,7 @@ docker buildx build \
 for platform in linux/amd64 linux/arm/v6 linux/arm/v7 linux/arm64; do
     docker buildx build \
                   --file docker/Dockerfile \
-                  --tag lirt/velero-plugin-for-openstack:v0.3.0 \
+                  --tag lirt/velero-plugin-for-openstack:v0.3.1 \
                   --platform "${platform}" \
                   --load \
                   .
