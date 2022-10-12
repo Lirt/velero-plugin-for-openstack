@@ -41,7 +41,7 @@ jobs:
           version: v0.16.0
           cluster_name: kind
           wait: 120s
-      - name: Load new plugin image to kind cluster
+      - name: Load new velero-plugin-for-openstack image to kind cluster
         run: |
           kind load docker-image "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}"
       - name: Install Helm
@@ -49,52 +49,24 @@ jobs:
         with:
           version: 'v3.10.0'
       - name: Install Velero CLI
-        env:
         run: |
           wget --quiet "https://github.com/vmware-tanzu/velero/releases/download/v${VELERO_CLI_VERSION}/velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
           tar -zxvf "velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
           sudo mv "velero-v${VELERO_CLI_VERSION}-linux-amd64/velero" /usr/local/bin/velero
           chmod 750 /usr/local/bin/velero
-      # - name: Deploy DevStack
-      #   uses: EmilienM/devstack-action@v0.7
-      #   with:
-      #     branch: "stable/yoga"
-      #     conf_overrides: |
-      #       SWIFT_ENABLE_TEMPURLS=True
-      #       SWIFT_TEMPURL_KEY=secretkey
-      #       SWIFT_HASH=12394u39845623984j28hf93d9173
-      #       SWIFT_DEFAULT_BIND_PORT=15492
-      #       SERVICE_TIMEOUT=200
-      #       disable_all_services
-      #       enable_service key mysql s-proxy s-object s-container s-account c-bak c-api c-vol c-sch
-      - name: Install python pip
-        run: python -m pip install --upgrade pip
-        shell: bash
-      - name: Erase MySQL package
-        run: sudo apt-get purge mysql-* || true
-        shell: bash
-      # This is to avoid RabbitMQ to fail at startup because a wrong version of erlang was installed
-      - name: Workaround for RabbitMQ
-        run: |
-          sudo apt-get purge -y esl-erlang || true
-          sudo apt-get install -y erlang rabbitmq-server || true
-        shell: bash
-      - name: Remove unwanted packages
-        run: |
-          sudo apt-get purge -y python3-simplejson python3-pyasn1-modules postgresql* || true
-        shell: bash
-      - name: Checkout Devstack
-        uses: actions/checkout@v2
+      - name: Deploy DevStack
+        uses: EmilienM/devstack-action@v0.8
         with:
-          ref: stable/yoga
-          repository: openstack/devstack
-          path: ./devstack
-      - name: Deploy devstack
-        run: |
-          cp "../${TESTS_DIRECTORY}/local.conf"
-          ./stack.sh
-        working-directory: ./devstack
-        shell: bash
+          branch: 'stable/yoga'
+          enable_workaround_docker_io: 'false'
+          conf_overrides: |
+            SWIFT_ENABLE_TEMPURLS=True
+            SWIFT_TEMPURL_KEY=secretkey
+            SWIFT_HASH=12394u39845623984j28hf93d9173
+            SWIFT_DEFAULT_BIND_PORT=15492
+            SERVICE_TIMEOUT=200
+            disable_all_services
+            enable_service key mysql s-proxy s-object s-container s-account c-bak c-api c-vol c-sch
       - name: Prepare Swift bucket for velero backups
         run: |
           source "${{ github.workspace }}/devstack/openrc"
