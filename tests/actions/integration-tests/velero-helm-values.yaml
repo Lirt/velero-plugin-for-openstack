@@ -4,7 +4,10 @@ credentials:
 configuration:
   provider: community.openstack.org/openstack
   backupStorageLocation:
+    name: swift
     bucket: my-swift-bucket
+  volumeSnapshotLocation:
+    name: cinder
 initContainers:
 - name: velero-plugin-openstack
   image: ""
@@ -14,4 +17,3 @@ initContainers:
       name: plugins
 snapshotsEnabled: true
 backupsEnabled: true
-

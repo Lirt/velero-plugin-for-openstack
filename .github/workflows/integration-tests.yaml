@@ -13,6 +13,7 @@ jobs:
       VELERO_CLI_VERSION: 1.8.1
       # Contains Velero 1.8.1
       VELERO_CHART_VERSION: 2.29.8
+      VELERO_RESTORE_NAME: my-test-restore-01
       VELERO_BACKUP_NAME: my-test-backup-01
       # From tag 1.25.0
       CINDER_CSI_CHART_VERSION: 2.2.0
@@ -66,7 +67,7 @@ jobs:
             SWIFT_DEFAULT_BIND_PORT=15492
             SERVICE_TIMEOUT=200
             disable_all_services
-            enable_service key mysql s-proxy s-object s-container s-account c-bak c-api c-vol c-sch
+            enable_service key rabbit mysql s-proxy s-object s-container s-account c-bak c-api c-vol c-sch n-api n-crt n-cpu n-cond n-sch n-api-meta n-sproxy placement-api placement-client
       - name: Prepare Swift bucket for velero backups
         run: |
           source "${{ github.workspace }}/devstack/openrc"
@@ -92,8 +93,22 @@ jobs:
                --wait-for-jobs
       - name: Create test backup and validate it
         run: |
-          velero backup create "${VELERO_BACKUP_NAME}"
+          # Create Cinder PVC
+          # Do backup
+          velero backup-location get
+          velero snapshot-location get
+          # velero backup create \
+          #               --snapshot-volumes true \
+          #               --volume-snapshot-locations cinder \
+          #               "${VELERO_BACKUP_NAME}"
+          velero backup create --storage-location swift "${VELERO_BACKUP_NAME}"
           sleep 120
           kubectl logs -n velero -l app.kubernetes.io/name=velero
           velero describe backups "${VELERO_BACKUP_NAME}"
           velero backup logs "${VELERO_BACKUP_NAME}"
+          # Do restore
+          velero restore create "${VELERO_RESTORE_NAME}" --from-backup "${VELERO_BACKUP_NAME}"
+          sleep 120
+          kubectl logs -n velero -l app.kubernetes.io/name=velero
+          velero describe restore "${VELERO_RESTORE_NAME}"
+          velero restore logs "${VELERO_RESTORE_NAME}"
