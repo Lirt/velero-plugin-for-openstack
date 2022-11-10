@@ -41,7 +41,7 @@ func (b *BlockStore) Init(config map[string]string) error {
 	b.config = config
 
 	// Authenticate to Openstack
-	err := utils.Authenticate(&b.provider, "cinder", b.log)
+	err := utils.Authenticate(&b.provider, "cinder", config, b.log)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate against openstack: %v", err)
 	}
