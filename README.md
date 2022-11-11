@@ -86,6 +86,8 @@ export OS_SWIFT_TENANT_NAME=<TENANT_NAME>
 export OS_SWIFT_USERNAME=<USERNAME>
 ```
 
+This option does not support using multiple clouds (or BSLs) for backups.
+
 ### Authentication using file
 
 You can also authenticate using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
@@ -94,7 +96,16 @@ Easiest way is to create file `/etc/openstack/clouds.y(a)ml` with content like t
 
 ```yaml
 clouds:
-  <CLOUD_NAME>:
+  <CLOUD_NAME_1>:
+    region_name: <REGION_NAME>
+    auth:
+      auth_url: "<AUTH_URL /v3>"
+      username: <USERNAME>
+      password: <PASSWORD>
+      project_name: <PROJECT_NAME>
+      project_domain_name: <PROJECT_DOMAIN_NAME>
+      user_domain_name: <USER_DOMAIN_NAME>
+  <CLOUD_NAME_2>:
     region_name: <REGION_NAME>
     auth:
       auth_url: "<AUTH_URL /v3>"
@@ -109,13 +120,58 @@ Or when authenticating using [Application Credentials](https://docs.openstack.or
 
 ```yaml
 clouds:
-  <CLOUD_NAME>:
+  <CLOUD_NAME_1>:
     region_name: <REGION_NAME>
     auth:
       auth_url: "<AUTH_URL /v3>"
       application_credential_name: <APPLICATION_CREDENTIAL_NAME>
       application_credential_id: <APPLICATION_CREDENTIAL_ID>
       application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
+  <CLOUD_NAME_2>:
+    region_name: <REGION_NAME>
+    auth:
+      auth_url: "<AUTH_URL /v3>"
+      application_credential_name: <APPLICATION_CREDENTIAL_NAME>
+      application_credential_id: <APPLICATION_CREDENTIAL_ID>
+      application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
+```
+
+These 2 options allow you also to authenticate against multiple Openstack Clouds at the same time. The way you can leverage this functionality is scenario where you want to store backups in 2 different locations. This scenario doesn't apply for Volume Snapshots as they always need to be created in the same cloud and region as where your PVCs are created! You can however combine this feature with `restic`.
+
+Example of BSLs:
+```yaml
+---
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: my-backup-in-cloud1
+  namespace: velero
+spec:
+  accessMode: ReadWrite
+  config:
+    cloud: cloud1
+    # optional region
+    region: fra1
+  default: false
+  objectStorage:
+    bucket: velero-backup-cloud1
+  provider: community.openstack.org/openstack
+---
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: my-backup-in-cloud2
+  namespace: velero
+spec:
+  accessMode: ReadWrite
+  config:
+    cloud: cloud2
+    # optional region
+    region: lon
+  default: false
+  objectStorage:
+    bucket: velero-backup-cloud2
+  provider: community.openstack.org/openstack
 ```
 
 ## Installation
@@ -141,17 +197,25 @@ Note: If you want to use plugin built for `arm` or `arm64` architecture, you can
 Change configuration of `backupstoragelocations.velero.io`:
 
 ```yaml
- spec:
-   objectStorage:
-     bucket: <BUCKET_NAME>
-   provider: community.openstack.org/openstack
+spec:
+  objectStorage:
+    bucket: <BUCKET_NAME>
+  provider: community.openstack.org/openstack
+  # optional config
+  # config:
+  #   cloud: cloud1
+  #   region: fra
 ```
 
 Change configuration of `volumesnapshotlocations.velero.io`:
 
 ```yaml
- spec:
-   provider: community.openstack.org/openstack
+spec:
+  provider: community.openstack.org/openstack
+  # optional config
+  # config:
+  #   cloud: cloud1
+  #   region: fra
 ```
 
 ### Install Using Helm Chart
@@ -171,6 +235,10 @@ configuration:
   backupStorageLocation:
     bucket: my-swift-bucket
     # caCert: <CERT_CONTENTS_IN_BASE64>
+  # optional config
+  # config:
+  #   cloud: cloud1
+  #   region: fra
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.4.0
