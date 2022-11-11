@@ -14,21 +14,22 @@ import (
 
 // Authenticate to Openstack and write client result to **pc
 func Authenticate(pc **gophercloud.ProviderClient, service string, config map[string]string, log logrus.FieldLogger) error {
-	// If service client is already initialized and contains auth result
-	// we know we were already authenticated
-	if *pc != nil {
-		clientAuthResult := (*pc).GetAuthResult()
-		if clientAuthResult != nil {
-			return nil
-		}
-	}
-
 	var err error
 	var clientOpts clientconfig.ClientOpts
 
+	// If we authenticate against multiple clouds, we cannot use reauthentication
 	if cloud, ok := config["cloud"]; ok {
 		log.Infof("Authentication will be done for cloud %v", cloud)
 		clientOpts.Cloud = cloud
+	} else {
+		// If service client is already initialized and contains auth result
+		// we know we were already authenticated
+		if *pc != nil {
+			clientAuthResult := (*pc).GetAuthResult()
+			if clientAuthResult != nil {
+				return nil
+			}
+		}
 	}
 
 	if _, ok := os.LookupEnv("OS_SWIFT_AUTH_URL"); ok && service == "swift" {
