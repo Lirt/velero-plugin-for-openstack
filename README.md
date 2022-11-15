@@ -136,7 +136,7 @@ clouds:
       application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
 ```
 
-These 2 options allow you also to authenticate against multiple Openstack Clouds at the same time. The way you can leverage this functionality is scenario where you want to store backups in 2 different locations. This scenario doesn't apply for Volume Snapshots as they always need to be created in the same cloud and region as where your PVCs are created! You can however combine this feature with `restic`.
+These 2 options allow you also to authenticate against multiple Openstack Clouds at the same time. The way you can leverage this functionality is scenario where you want to store backups in 2 different locations. This scenario doesn't apply for Volume Snapshots as they always need to be created in the same cloud and region as where your PVCs are created!
 
 Example of BSLs:
 ```yaml
@@ -201,10 +201,13 @@ spec:
   objectStorage:
     bucket: <BUCKET_NAME>
   provider: community.openstack.org/openstack
-  # optional config
+  # # Optional config
   # config:
   #   cloud: cloud1
   #   region: fra
+  #   # If you want to enable restic you need to set resticRepoPrefix to this value:
+  #   #   resticRepoPrefix: swift:<BUCKET_NAME>:/<PATH>
+  #   resticRepoPrefix: swift:my-awesome-bucket:/restic # Example
 ```
 
 Change configuration of `volumesnapshotlocations.velero.io`:
@@ -235,10 +238,13 @@ configuration:
   backupStorageLocation:
     bucket: my-swift-bucket
     # caCert: <CERT_CONTENTS_IN_BASE64>
-  # optional config
+  # # Optional config
   # config:
   #   cloud: cloud1
   #   region: fra
+  #   # If you want to enable restic you need to set resticRepoPrefix to this value:
+  #   #   resticRepoPrefix: swift:<BUCKET_NAME>:/<PATH>
+  #   resticRepoPrefix: swift:my-awesome-bucket:/restic # Example
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.4.0
@@ -248,6 +254,8 @@ initContainers:
       name: plugins
 snapshotsEnabled: true
 backupsEnabled: true
+# Optionally enable restic
+# deployRestic: true
 ```
 
 Make sure that secret `velero-credentials` exists and has proper format and content.
@@ -263,7 +271,7 @@ helm upgrade \
      --install \
      --namespace velero \
      --values values.yaml \
-     --version 2.29.8
+     --version 2.32.1
 ```
 
 ## Volume Backups
@@ -272,9 +280,17 @@ Please note two things regarding volume backups:
 1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent.
 2. Snapshots in the cinder backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder backend creates durable snapshots with your cloud provider.
 
-Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/).
+### Native VolumeSnapshots
 
 Alternative Kubernetes native solution (GA since 1.20) for volume snapshots (not backups) are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
+
+### Restic
+
+Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/). Please understand that this repository does not provide any functionality for restic and restic implementation is done purely in Velero code.
+
+There is a common similarity that `restic` can use Openstack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
+
+Recommended way of using this plugin with restic is to use authentication with environment variables and only for 1 cloud and 1 BackupStorageLocation. In the BSL you need to configure `config.resticRepoPrefix: swift:<BUCKET_NAME>:/<PATH>` - for example `config.resticRepoPrefix: swift:my-awesome-bucket:/restic`.
 
 ## Known Issues
 
