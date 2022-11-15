@@ -303,11 +303,15 @@ Recommended way of using this plugin with restic is to use authentication with e
 go mod tidy
 go build
 
+# Prepare docker
+docker buildx create --use
+
 # Build image
 docker buildx build \
               --file docker/Dockerfile \
               --platform "linux/amd64" \
               --tag lirt/velero-plugin-for-openstack:v0.4.0 \
+              --no-cache \
               --load \
               .
 
@@ -316,6 +320,7 @@ docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
               --tag lirt/velero-plugin-for-openstack:v0.4.0 \
+              --no-cache \
               --push \
               .
 
@@ -327,6 +332,7 @@ for platform in linux/amd64 linux/arm/v6 linux/arm/v7 linux/arm64; do
                   --file docker/Dockerfile \
                   --tag lirt/velero-plugin-for-openstack:v0.4.0 \
                   --platform "${platform}" \
+                  --no-cache \
                   --load \
                   .
 done

@@ -1,0 +1,142 @@
+---
+name: Integration tests with Kind and DevStack
+on:
+  push
+jobs:
+  unit-test:
+    name: "Unit tests (go v${{ matrix.go-version }})"
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        go-version: [ '1.16' ]
+    steps:
+      - name: Checkout velero-plugin-for-openstack
+        uses: actions/checkout@v3
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Run unit tests
+        run: |
+          go test -v ./...
+  integration-test:
+    name: "Integration tests (go v${{ matrix.go-version }})"
+    needs: unit-test
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        go-version: [ '1.16' ]
+    env:
+      VELERO_CLI_VERSION: 1.9.3
+      # Contains Velero 1.9.3
+      VELERO_CHART_VERSION: 2.32.2
+      VELERO_RESTORE_NAME: my-test-restore-01
+      VELERO_BACKUP_NAME: my-test-backup-01
+      # From tag 1.25.0
+      CINDER_CSI_CHART_VERSION: 2.2.0
+      DOCKER_IMAGE_NAME: velero-plugin-for-openstack
+      SWIFT_BUCKET_NAME: my-swift-bucket
+      TESTS_DIRECTORY: tests/actions/integration-tests
+    steps:
+      - name: Checkout velero-plugin-for-openstack
+        uses: actions/checkout@v3
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Build Docker image
+        run: |
+          docker buildx build \
+                 --file docker/Dockerfile \
+                 --tag "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+                 --platform linux/amd64 \
+                 --load \
+                 .
+      - name: Install Kind
+        uses: helm/kind-action@v1.4.0
+        with:
+          # Kubernetes 1.25.x
+          version: v0.16.0
+          cluster_name: kind
+          wait: 120s
+      - name: Load new velero-plugin-for-openstack image to kind cluster
+        run: |
+          kind load docker-image "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}"
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.10.0'
+      - name: Install Velero CLI
+        run: |
+          wget --quiet "https://github.com/vmware-tanzu/velero/releases/download/v${VELERO_CLI_VERSION}/velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
+          tar -zxvf "velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
+          sudo mv "velero-v${VELERO_CLI_VERSION}-linux-amd64/velero" /usr/local/bin/velero
+          chmod 750 /usr/local/bin/velero
+      - name: Deploy DevStack
+        uses: EmilienM/devstack-action@v0.8
+        with:
+          branch: 'stable/yoga'
+          enable_workaround_docker_io: 'false'
+          conf_overrides: |
+            SWIFT_ENABLE_TEMPURLS=True
+            SWIFT_TEMPURL_KEY=secretkey
+            SWIFT_HASH=12394u39845623984j28hf93d9173
+            SWIFT_DEFAULT_BIND_PORT=15492
+            SERVICE_TIMEOUT=200
+            disable_all_services
+            enable_service key rabbit mysql s-proxy s-object s-container s-account c-bak c-api c-vol c-sch n-api n-crt n-cpu n-cond n-sch n-api-meta n-sproxy placement-api placement-client
+      - name: Prepare Swift bucket for velero backups
+        run: |
+          source "${{ github.workspace }}/devstack/openrc"
+          SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
+          swift post "${SWIFT_BUCKET_NAME}"
+          swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
+      - name: Install Velero helm chart
+        run: |
+          export HOST_IP=$(hostname -I | awk '{print $1}')
+          export OS_AUTH_URL=$(echo -n "http://${HOST_IP}/identity" | base64)
+          envsubst < "${TESTS_DIRECTORY}/velero-credentials.yaml" > "${TESTS_DIRECTORY}/velero-credentials-templated.yaml"
+          kubectl create namespace velero
+          kubectl apply -f "${TESTS_DIRECTORY}/velero-credentials-templated.yaml"
+          helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
+          helm repo update
+          helm install velero vmware-tanzu/velero \
+               --namespace velero \
+               --version "${VELERO_CHART_VERSION}" \
+               --values "${TESTS_DIRECTORY}/velero-helm-values.yaml" \
+               --set "initContainers[0].image=${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+               --timeout 10m \
+               --wait \
+               --wait-for-jobs
+      - name: Create test backup and validate it
+        run: |
+          # Create Cinder PVC
+          # Checks
+          velero backup-location get
+          velero snapshot-location get
+
+          # Do backup
+          velero backup create --storage-location swift "${VELERO_BACKUP_NAME}"
+          sleep 120
+          kubectl logs -n velero -l app.kubernetes.io/name=velero
+          velero describe backups "${VELERO_BACKUP_NAME}"
+          velero backup logs "${VELERO_BACKUP_NAME}"
+          if ! velero describe backups "${VELERO_BACKUP_NAME}" | grep -q "^Phase:.*Completed"; then
+            echo "Backup ${VELERO_BACKUP_NAME} failed";
+            exit 1
+          else
+            echo "Backup ${VELERO_BACKUP_NAME} was successful";
+          fi
+
+          # Do restore
+          velero restore create "${VELERO_RESTORE_NAME}" --from-backup "${VELERO_BACKUP_NAME}"
+          sleep 120
+          kubectl logs -n velero -l app.kubernetes.io/name=velero
+          velero describe restore "${VELERO_RESTORE_NAME}"
+          velero restore logs "${VELERO_RESTORE_NAME}"
+          if ! velero describe restore "${VELERO_RESTORE_NAME}" | grep -q "^Phase:.*Completed"; then
+            echo "Restore ${VELERO_RESTORE_NAME} failed";
+            exit 1
+          else
+            echo "Restore ${VELERO_RESTORE_NAME} was successful";
+          fi

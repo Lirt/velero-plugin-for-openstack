@@ -1,0 +1,19 @@
+---
+credentials:
+  extraSecretRef: "velero-credentials"
+configuration:
+  provider: community.openstack.org/openstack
+  backupStorageLocation:
+    name: swift
+    bucket: my-swift-bucket
+  volumeSnapshotLocation:
+    name: cinder
+initContainers:
+- name: velero-plugin-openstack
+  image: ""
+  imagePullPolicy: IfNotPresent
+  volumeMounts:
+    - mountPath: /target
+      name: plugins
+snapshotsEnabled: true
+backupsEnabled: true
