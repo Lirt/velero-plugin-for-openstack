@@ -30,15 +30,23 @@ func NewObjectStore(log logrus.FieldLogger) *ObjectStore {
 func (o *ObjectStore) Init(config map[string]string) error {
 	o.log.Infof("ObjectStore.Init called")
 
-	err := utils.Authenticate(&o.provider, "swift", o.log)
+	err := utils.Authenticate(&o.provider, "swift", config, o.log)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate against Openstack: %v", err)
 	}
 
-	if o.client == nil {
+	// If we haven't set client before or we use multiple clouds - get new client
+	if o.client == nil || config["cloud"] != "" {
 		region, ok := os.LookupEnv("OS_SWIFT_REGION_NAME")
 		if !ok {
-			region = utils.GetEnv("OS_REGION_NAME", "")
+			region, ok = os.LookupEnv("OS_REGION_NAME")
+			if !ok {
+				if config["region"] != "" {
+					region = config["region"]
+				} else {
+					region = "RegionOne"
+				}
+			}
 		}
 		o.client, err = openstack.NewObjectStorageV1(o.provider, gophercloud.EndpointOpts{
 			Region: region,
@@ -46,6 +54,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create swift storage object: %v", err)
 		}
+		o.log.Infof("Successfully created service client with endpoint %v using region %v", o.client.Endpoint, region)
 	}
 
 	return nil

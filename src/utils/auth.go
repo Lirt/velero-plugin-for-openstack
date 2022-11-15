@@ -13,21 +13,28 @@ import (
 )
 
 // Authenticate to Openstack and write client result to **pc
-func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.FieldLogger) error {
-	// If service client is already initialized and contains auth result
-	// we know we were already authenticated
-	if *pc != nil {
-		clientAuthResult := (*pc).GetAuthResult()
-		if clientAuthResult != nil {
-			return nil
-		}
-	}
-
+func Authenticate(pc **gophercloud.ProviderClient, service string, config map[string]string, log logrus.FieldLogger) error {
 	var err error
 	var clientOpts clientconfig.ClientOpts
 
+	// If we authenticate against multiple clouds, we cannot use reauthentication
+	if cloud, ok := config["cloud"]; ok {
+		log.Infof("Authentication will be done for cloud %v", cloud)
+		clientOpts.Cloud = cloud
+	} else {
+		// If service client is already initialized and contains auth result
+		// we know we were already authenticated
+		if *pc != nil {
+			clientAuthResult := (*pc).GetAuthResult()
+			if clientAuthResult != nil {
+				return nil
+			}
+		}
+	}
+
 	if _, ok := os.LookupEnv("OS_SWIFT_AUTH_URL"); ok && service == "swift" {
-		log.Infof("Authenticating against Swift using special swift environment variables (see README.md)")
+		log.Infof("Trying to authenticate against SwiftStack using special swift environment variables (see README.md)")
+
 		clientOpts.AuthInfo = &clientconfig.AuthInfo{
 			ApplicationCredentialID:     os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_ID"),
 			ApplicationCredentialName:   os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_NAME"),
@@ -67,7 +74,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, log logrus.Fi
 	if err != nil {
 		return err
 	}
-	log.Infof("Authentication successful")
+	log.Infof("Authentication against identity endpoint %v was successful", (*pc).IdentityEndpoint)
 
 	return nil
 }
