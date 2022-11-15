@@ -3,8 +3,25 @@ name: Integration tests with Kind and DevStack
 on:
   push
 jobs:
-  unit:
+  unit-test:
+    name: "Unit tests (go v${{ matrix.go-version }})"
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        go-version: [ '1.16' ]
+    steps:
+      - name: Checkout velero-plugin-for-openstack
+        uses: actions/checkout@v3
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Run unit tests
+        run: |
+          go test -v ./...
+  integration-test:
     name: "Integration tests (go v${{ matrix.go-version }})"
+    needs: unit-test
     runs-on: ubuntu-20.04
     strategy:
       matrix:
