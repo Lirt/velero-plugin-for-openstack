@@ -111,21 +111,32 @@ jobs:
       - name: Create test backup and validate it
         run: |
           # Create Cinder PVC
-          # Do backup
+          # Checks
           velero backup-location get
           velero snapshot-location get
-          # velero backup create \
-          #               --snapshot-volumes true \
-          #               --volume-snapshot-locations cinder \
-          #               "${VELERO_BACKUP_NAME}"
+
+          # Do backup
           velero backup create --storage-location swift "${VELERO_BACKUP_NAME}"
           sleep 120
           kubectl logs -n velero -l app.kubernetes.io/name=velero
           velero describe backups "${VELERO_BACKUP_NAME}"
           velero backup logs "${VELERO_BACKUP_NAME}"
+          if ! velero describe backups "${VELERO_BACKUP_NAME}" | grep -q "^Phase:.*Completed"; then
+            echo "Backup ${VELERO_BACKUP_NAME} failed";
+            exit 1
+          else
+            echo "Backup ${VELERO_BACKUP_NAME} was successful";
+          fi
+
           # Do restore
           velero restore create "${VELERO_RESTORE_NAME}" --from-backup "${VELERO_BACKUP_NAME}"
           sleep 120
           kubectl logs -n velero -l app.kubernetes.io/name=velero
           velero describe restore "${VELERO_RESTORE_NAME}"
           velero restore logs "${VELERO_RESTORE_NAME}"
+          if ! velero describe restore "${VELERO_RESTORE_NAME}" | grep -q "^Phase:.*Completed"; then
+            echo "Restore ${VELERO_RESTORE_NAME} failed";
+            exit 1
+          else
+            echo "Restore ${VELERO_RESTORE_NAME} was successful";
+          fi
