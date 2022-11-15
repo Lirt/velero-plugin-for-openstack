@@ -27,9 +27,9 @@ jobs:
       matrix:
         go-version: [ '1.16' ]
     env:
-      VELERO_CLI_VERSION: 1.8.1
-      # Contains Velero 1.8.1
-      VELERO_CHART_VERSION: 2.29.8
+      VELERO_CLI_VERSION: 1.9.3
+      # Contains Velero 1.9.3
+      VELERO_CHART_VERSION: 2.32.2
       VELERO_RESTORE_NAME: my-test-restore-01
       VELERO_BACKUP_NAME: my-test-backup-01
       # From tag 1.25.0
