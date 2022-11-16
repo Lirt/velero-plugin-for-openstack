@@ -8,6 +8,7 @@
 * [`v0.3.0` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.3.0/docker/Dockerfile)
 * [`v0.3.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.3.1/docker/Dockerfile)
 * [`v0.4.0` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.4.0/docker/Dockerfile)
+* [`v0.4.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.4.1/docker/Dockerfile)
 
 # Velero plugin for OpenStack
 
@@ -21,6 +22,7 @@ Below is a listing of plugin versions and respective Velero versions for which t
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
-| v0.3.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x |
+| v0.4.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
+| v0.3.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
 | v0.2.x         | v1.4.x, v1.5.x |
 | v0.1.x         | v1.4.x, v1.5.x |
