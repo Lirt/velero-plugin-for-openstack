@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/Lirt/velero-plugin-swift/src/utils"
@@ -106,7 +107,11 @@ func (o *ObjectStore) ObjectExists(bucket, key string) (bool, error) {
 	result := objects.Get(o.client, bucket, key, nil)
 
 	if result.Err != nil {
-		if result.Err.Error() == "Resource not found" {
+		errResourceNotFound, err := regexp.MatchString("Resource not found", result.Err.Error())
+		if err != nil {
+			return false, fmt.Errorf("regexp matching failed: %v", err)
+		}
+		if errResourceNotFound {
 			log.Infof("Key %v in bucket %v doesn't exist yet.", key, bucket)
 			return false, nil
 		}
