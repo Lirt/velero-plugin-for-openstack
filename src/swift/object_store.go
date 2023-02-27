@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Lirt/velero-plugin-swift/src/utils"
@@ -55,6 +57,30 @@ func (o *ObjectStore) Init(config map[string]string) error {
 			return fmt.Errorf("failed to create swift storage object: %v", err)
 		}
 		o.log.Infof("Successfully created service client with endpoint %v using region %v", o.client.Endpoint, region)
+	}
+
+	// see https://specs.openstack.org/openstack/swift-specs/specs/in_progress/service_token.html
+	resellerPrefixes := strings.Split(utils.GetEnv("OS_SWIFT_RESELLER_PREFIXES", "AUTH_"), ",")
+	account := utils.GetEnv("OS_SWIFT_ACCOUNT_OVERRIDE", "")
+	if account != "" {
+		u, err := url.Parse(o.client.Endpoint)
+		if err != nil {
+			return fmt.Errorf("failed to parse swift storage client endpoint: %v", err)
+		}
+		u.Path = utils.ReplaceAccount(account, u.Path, resellerPrefixes)
+		o.client.Endpoint = u.String()
+		o.log.Infof("Successfully overrode service client endpoint with a %v account: %v", account, o.client.Endpoint)
+	}
+
+	endpoint := utils.GetEnv("OS_SWIFT_ENDPOINT_OVERRIDE", "")
+	if endpoint != "" {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			return fmt.Errorf("failed to parse swift storage client endpoint: %v", err)
+		}
+		o.client.Endpoint = u.String()
+		o.client.ResourceBase = ""
+		o.log.Infof("Successfully overrode service client endpoint: %v", o.client.Endpoint)
 	}
 
 	return nil
