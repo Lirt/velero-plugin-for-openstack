@@ -61,7 +61,7 @@ func TestPutObject(t *testing.T) {
 	th.SetupHTTP()
 	defer th.TeardownHTTP()
 
-	container := "testBucket"
+	container := "testContainer"
 	object := "testKey"
 	content := "All code is guilty until proven innocent"
 	handlePutObject(t, container, object, []byte(content))
@@ -78,7 +78,7 @@ func TestGetObject(t *testing.T) {
 	th.SetupHTTP()
 	defer th.TeardownHTTP()
 
-	container := "testBucket"
+	container := "testContainer"
 	object := "testKey"
 	content := "All code is guilty until proven innocent"
 	handleGetObject(t, container, object, []byte(content))
@@ -99,7 +99,7 @@ func TestObjectExists(t *testing.T) {
 	th.SetupHTTP()
 	defer th.TeardownHTTP()
 
-	container := "testBucket"
+	container := "testContainer"
 	object := "testKey"
 	handleObjectExists(t, container, object)
 

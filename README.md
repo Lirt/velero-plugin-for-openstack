@@ -185,7 +185,7 @@ Initialize velero plugin:
 velero install \
        --provider "community.openstack.org/openstack" \
        --plugins lirt/velero-plugin-for-openstack:v0.4.1 \
-       --bucket <BUCKET_NAME> \
+       --bucket <SWIFT_CONTAINER_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
@@ -199,15 +199,15 @@ Change configuration of `backupstoragelocations.velero.io`:
 ```yaml
 spec:
   objectStorage:
-    bucket: <BUCKET_NAME>
+    bucket: <CONTAINER_NAME>
   provider: community.openstack.org/openstack
   # # Optional config
   # config:
   #   cloud: cloud1
   #   region: fra
   #   # If you want to enable restic you need to set resticRepoPrefix to this value:
-  #   #   resticRepoPrefix: swift:<BUCKET_NAME>:/<PATH>
-  #   resticRepoPrefix: swift:my-awesome-bucket:/restic # Example
+  #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
+  #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
 ```
 
 Change configuration of `volumesnapshotlocations.velero.io`:
@@ -236,15 +236,15 @@ credentials:
 configuration:
   provider: community.openstack.org/openstack
   backupStorageLocation:
-    bucket: my-swift-bucket
+    bucket: my-swift-container
     # caCert: <CERT_CONTENTS_IN_BASE64>
   # # Optional config
   # config:
   #   cloud: cloud1
   #   region: fra
   #   # If you want to enable restic you need to set resticRepoPrefix to this value:
-  #   #   resticRepoPrefix: swift:<BUCKET_NAME>:/<PATH>
-  #   resticRepoPrefix: swift:my-awesome-bucket:/restic # Example
+  #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
+  #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.4.1
@@ -290,7 +290,7 @@ Volume backups with Velero can also be done using [Restic](https://velero.io/doc
 
 There is a common similarity that `restic` can use Openstack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
 
-Recommended way of using this plugin with restic is to use authentication with environment variables and only for 1 cloud and 1 BackupStorageLocation. In the BSL you need to configure `config.resticRepoPrefix: swift:<BUCKET_NAME>:/<PATH>` - for example `config.resticRepoPrefix: swift:my-awesome-bucket:/restic`.
+Recommended way of using this plugin with restic is to use authentication with environment variables and only for 1 cloud and 1 BackupStorageLocation. In the BSL you need to configure `config.resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>` - for example `config.resticRepoPrefix: swift:my-awesome-container:/restic`.
 
 ## Known Issues
 

@@ -5,7 +5,7 @@ configuration:
   provider: community.openstack.org/openstack
   backupStorageLocation:
     name: swift
-    bucket: my-swift-bucket
+    bucket: my-swift-container
   volumeSnapshotLocation:
     name: cinder
 initContainers:
