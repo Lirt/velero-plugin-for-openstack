@@ -34,7 +34,7 @@ jobs:
       # From tag 1.25.0
       CINDER_CSI_CHART_VERSION: 2.2.0
       DOCKER_IMAGE_NAME: velero-plugin-for-openstack
-      SWIFT_BUCKET_NAME: my-swift-bucket
+      SWIFT_CONTAINER_NAME: my-swift-container
       TESTS_DIRECTORY: tests/actions/integration-tests
     steps:
       - name: Checkout velero-plugin-for-openstack
@@ -84,11 +84,11 @@ jobs:
             SERVICE_TIMEOUT=200
             disable_all_services
             enable_service key rabbit mysql s-proxy s-object s-container s-account c-bak c-api c-vol c-sch n-api n-crt n-cpu n-cond n-sch n-api-meta n-sproxy placement-api placement-client
-      - name: Prepare Swift bucket for velero backups
+      - name: Prepare Swift container for velero backups
         run: |
           source "${{ github.workspace }}/devstack/openrc"
           SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
-          swift post "${SWIFT_BUCKET_NAME}"
+          swift post "${SWIFT_CONTAINER_NAME}"
           swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
       - name: Install Velero helm chart
         run: |

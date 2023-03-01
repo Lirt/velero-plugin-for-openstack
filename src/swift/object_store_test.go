@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func handleGetObject(t *testing.T, bucket, key string, data []byte) {
-	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", bucket, key),
+func handleGetObject(t *testing.T, container, object string, data []byte) {
+	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
 		func(w http.ResponseWriter, r *http.Request) {
 			th.TestMethod(t, r, http.MethodGet)
 			th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
@@ -30,8 +30,8 @@ func handleGetObject(t *testing.T, bucket, key string, data []byte) {
 		})
 }
 
-func handlePutObject(t *testing.T, bucket, key string, data []byte) {
-	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", bucket, key),
+func handlePutObject(t *testing.T, container, object string, data []byte) {
+	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
 		func(w http.ResponseWriter, r *http.Request) {
 			th.TestMethod(t, r, http.MethodPut)
 			th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
@@ -46,8 +46,8 @@ func handlePutObject(t *testing.T, bucket, key string, data []byte) {
 		})
 }
 
-func handleObjectExists(t *testing.T, bucket, key string) {
-	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", bucket, key),
+func handleObjectExists(t *testing.T, container, object string) {
+	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
 		func(w http.ResponseWriter, r *http.Request) {
 			th.TestMethod(t, r, http.MethodHead)
 			th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
@@ -61,16 +61,16 @@ func TestPutObject(t *testing.T) {
 	th.SetupHTTP()
 	defer th.TeardownHTTP()
 
-	bucket := "testBucket"
-	key := "testKey"
+	container := "testContainer"
+	object := "testKey"
 	content := "All code is guilty until proven innocent"
-	handlePutObject(t, bucket, key, []byte(content))
+	handlePutObject(t, container, object, []byte(content))
 
 	store := ObjectStore{
 		client: fakeClient.ServiceClient(),
 		log:    logrus.New(),
 	}
-	err := store.PutObject(bucket, key, strings.NewReader(content))
+	err := store.PutObject(container, object, strings.NewReader(content))
 	assert.Nil(t, err)
 }
 
@@ -78,16 +78,16 @@ func TestGetObject(t *testing.T) {
 	th.SetupHTTP()
 	defer th.TeardownHTTP()
 
-	bucket := "testBucket"
-	key := "testKey"
+	container := "testContainer"
+	object := "testKey"
 	content := "All code is guilty until proven innocent"
-	handleGetObject(t, bucket, key, []byte(content))
+	handleGetObject(t, container, object, []byte(content))
 
 	store := ObjectStore{
 		client: fakeClient.ServiceClient(),
 		log:    logrus.New(),
 	}
-	readCloser, err := store.GetObject(bucket, key)
+	readCloser, err := store.GetObject(container, object)
 
 	if !assert.Nil(t, err) {
 		t.FailNow()
@@ -99,16 +99,16 @@ func TestObjectExists(t *testing.T) {
 	th.SetupHTTP()
 	defer th.TeardownHTTP()
 
-	bucket := "testBucket"
-	key := "testKey"
-	handleObjectExists(t, bucket, key)
+	container := "testContainer"
+	object := "testKey"
+	handleObjectExists(t, container, object)
 
 	store := ObjectStore{
 		client: fakeClient.ServiceClient(),
 		log:    logrus.New(),
 	}
 
-	_, err := store.ObjectExists(bucket, key)
+	_, err := store.ObjectExists(container, object)
 
 	if !assert.Nil(t, err) {
 		t.FailNow()
