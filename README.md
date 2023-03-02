@@ -26,6 +26,7 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
+| v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x |
 | v0.4.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
 | v0.3.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
 | v0.2.x         | v1.4.x, v1.5.x |
@@ -193,15 +194,15 @@ Initialize velero plugin:
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.4.1 \
+       --plugins lirt/velero-plugin-for-openstack:v0.5.0 \
        --bucket <SWIFT_CONTAINER_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.4.1
+velero plugin add lirt/velero-plugin-for-openstack:v0.5.0
 ```
 
-Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.4.1-arm64`.
+Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.5.0-arm64`.
 
 Change configuration of `backupstoragelocations.velero.io`:
 
@@ -256,7 +257,7 @@ configuration:
   #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.4.1
+  image: lirt/velero-plugin-for-openstack:v0.5.0
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
@@ -319,7 +320,7 @@ docker buildx create --use
 docker buildx build \
               --file docker/Dockerfile \
               --platform "linux/amd64" \
-              --tag lirt/velero-plugin-for-openstack:v0.4.1 \
+              --tag lirt/velero-plugin-for-openstack:v0.5.0 \
               --no-cache \
               --load \
               .
@@ -328,7 +329,7 @@ docker buildx build \
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.4.1 \
+              --tag lirt/velero-plugin-for-openstack:v0.5.0 \
               --no-cache \
               --push \
               .
@@ -339,7 +340,7 @@ docker buildx build \
 for platform in linux/amd64 linux/arm/v6 linux/arm/v7 linux/arm64; do
     docker buildx build \
                   --file docker/Dockerfile \
-                  --tag lirt/velero-plugin-for-openstack:v0.4.1 \
+                  --tag lirt/velero-plugin-for-openstack:v0.5.0 \
                   --platform "${platform}" \
                   --no-cache \
                   --load \
