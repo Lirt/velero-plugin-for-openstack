@@ -72,6 +72,15 @@ export OS_APPLICATION_CREDENTIAL_SECRET=<APP_CRED_SECRET>
 # If you want to test with unsecure certificates
 export OS_VERIFY="false"
 export TLS_SKIP_VERIFY="true"
+
+# If you want to override Swift account ID
+export OS_SWIFT_ACCOUNT_OVERRIDE=<NEW_PROJECT_ID>
+# In case if you have non-standard reseller prefixes
+export OS_SWIFT_RESELLER_PREFIXES=AUTH_,SERVICE_
+
+# If you want to completely override Swift endpoint URL
+# Has a higher priority over the OS_SWIFT_ACCOUNT_OVERRIDE
+export OS_SWIFT_ENDPOINT_OVERRIDE=http://my-local/v1/swift
 ```
 
 If your Openstack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder:
