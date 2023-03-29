@@ -186,6 +186,15 @@ spec:
 
 ## Installation
 
+### Container Setup
+
+Swift container must have [Temporary URL Key](https://docs.openstack.org/swift/latest/api/temporary_url_middleware.html) configured to make it possible to download Velero backups. In your swift project you can execute following command to configure it:
+
+```bash
+SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
+swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
+```
+
 ### Install using Velero CLI
 
 Initialize velero plugin:
