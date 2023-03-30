@@ -315,24 +315,13 @@ Recommended way of using this plugin with restic is to use authentication with e
 
 - [Incompatibility with Cinder version 13.0.0 (Rocky)](https://github.com/Lirt/velero-plugin-for-openstack/issues/20)
 
-## Build
+## Test & Build
 
 ```bash
-# Build code
+# test and build code
+go test -v ./...
 go mod tidy
 go build
-
-# Prepare docker
-docker buildx create --use
-
-# Build image
-docker buildx build \
-              --file docker/Dockerfile \
-              --platform "linux/amd64" \
-              --tag lirt/velero-plugin-for-openstack:v0.5.0 \
-              --no-cache \
-              --load \
-              .
 
 # Build and push image for linux amd64, arm64, arm
 docker buildx build \
@@ -342,25 +331,6 @@ docker buildx build \
               --no-cache \
               --push \
               .
-
-# Build one platform by one for local build.
-# Building all with --load cannot be done until docker fixes it.
-# GitHub issue: https://github.com/docker/buildx/issues/59
-for platform in linux/amd64 linux/arm/v6 linux/arm/v7 linux/arm64; do
-    docker buildx build \
-                  --file docker/Dockerfile \
-                  --tag lirt/velero-plugin-for-openstack:v0.5.0 \
-                  --platform "${platform}" \
-                  --no-cache \
-                  --load \
-                  .
-done
-```
-
-## Test
-
-```bash
-go test -v ./...
 ```
 
 ## Development
