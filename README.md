@@ -1,14 +1,14 @@
-# Velero Plugin for Openstack
+# Velero Plugin for OpenStack
 
-Openstack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
+OpenStack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
 This plugin is [included as community supported plugin by Velero organization](https://velero.io/plugins/).
 
 ## Table of Contents
 
-- [Velero Plugin for Openstack](#velero-plugin-for-openstack)
+- [Velero Plugin for OpenStack](#velero-plugin-for-openstack)
   - [Compatibility](#compatibility)
-  - [Openstack Authentication Configuration](#openstack-authentication-configuration)
+  - [OpenStack Authentication Configuration](#openstack-authentication-configuration)
     - [Authentication using environment variables](#authentication-using-environment-variables)
     - [Authentication using file](#authentication-using-file)
   - [Installation](#installation)
@@ -32,7 +32,7 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 | v0.2.x         | v1.4.x, v1.5.x |
 | v0.1.x         | v1.4.x, v1.5.x |
 
-## Openstack Authentication Configuration
+## OpenStack Authentication Configuration
 
 The order of authentication methods is following:
 1. Authentication using environment variables takes precedence (including [Application Credentials](https://docs.openstack.org/keystone/queens/user/application_credentials.html#using-application-credentials)). You **must not** set env. variable `OS_CLOUD` when you want to authenticate using env. variables because authenticator will try to look for `clouds.y(a)ml` file and use it.
@@ -46,7 +46,7 @@ For authentication using application credentials you need to first create them u
 
 ### Authentication using Environment Variables
 
-Configure velero container with your Openstack authentication environment variables:
+Configure velero container with your OpenStack authentication environment variables:
 
 ```bash
 # Keystone v2.0
@@ -78,13 +78,15 @@ export TLS_SKIP_VERIFY="true"
 export OS_SWIFT_ACCOUNT_OVERRIDE=<NEW_PROJECT_ID>
 # In case if you have non-standard reseller prefixes
 export OS_SWIFT_RESELLER_PREFIXES=AUTH_,SERVICE_
+# A valid Temp URL key must be specified, when overriding the Swift account ID
+export OS_SWIFT_TEMP_URL_KEY=secret-key
 
 # If you want to completely override Swift endpoint URL
 # Has a higher priority over the OS_SWIFT_ACCOUNT_OVERRIDE
 export OS_SWIFT_ENDPOINT_OVERRIDE=http://my-local/v1/swift
 ```
 
-If your Openstack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder:
+If your OpenStack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder:
 
 ```bash
 # Swift with SwiftStack
@@ -146,7 +148,7 @@ clouds:
       application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
 ```
 
-These 2 options allow you also to authenticate against multiple Openstack Clouds at the same time. The way you can leverage this functionality is scenario where you want to store backups in 2 different locations. This scenario doesn't apply for Volume Snapshots as they always need to be created in the same cloud and region as where your PVCs are created!
+These 2 options allow you also to authenticate against multiple OpenStack Clouds at the same time. The way you can leverage this functionality is scenario where you want to store backups in 2 different locations. This scenario doesn't apply for Volume Snapshots as they always need to be created in the same cloud and region as where your PVCs are created!
 
 Example of BSLs:
 ```yaml
@@ -188,12 +190,21 @@ spec:
 
 ### Container Setup
 
-Swift container must have [Temporary URL Key](https://docs.openstack.org/swift/latest/api/temporary_url_middleware.html) configured to make it possible to download Velero backups. In your swift project you can execute following command to configure it:
+Swift container must have [Temporary URL Key](https://docs.openstack.org/swift/latest/api/temporary_url_middleware.html) configured to make it possible to download Velero backups. In your Swift project you can execute following command to configure it:
 
 ```bash
 SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
 swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
 ```
+
+Or per container Temporary URL key:
+
+```bash
+SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
+swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}" my-container
+```
+
+> **Note:** If the Swift account ID is overridden (for example, if the current authentication project scope does not correspond to the destination container project ID), you must set the corresponding valid `OS_SWIFT_TEMP_URL_KEY` environment variable.
 
 ### Install using Velero CLI
 
@@ -307,7 +318,7 @@ Alternative Kubernetes native solution (GA since 1.20) for volume snapshots (not
 
 Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/). Please understand that this repository does not provide any functionality for restic and restic implementation is done purely in Velero code.
 
-There is a common similarity that `restic` can use Openstack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
+There is a common similarity that `restic` can use OpenStack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
 
 Recommended way of using this plugin with restic is to use authentication with environment variables and only for 1 cloud and 1 BackupStorageLocation. In the BSL you need to configure `config.resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>` - for example `config.resticRepoPrefix: swift:my-awesome-container:/restic`.
 

@@ -12,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Authenticate to Openstack and write client result to **pc
+// Authenticate to OpenStack and write client result to **pc
 func Authenticate(pc **gophercloud.ProviderClient, service string, config map[string]string, log logrus.FieldLogger) error {
 	var err error
 	var clientOpts clientconfig.ClientOpts
@@ -54,7 +54,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 			AllowReauth:                 true,
 		}
 	} else {
-		log.Infof("Trying to authenticate against Openstack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
+		log.Infof("Trying to authenticate against OpenStack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
 		clientOpts.AuthInfo = &clientconfig.AuthInfo{
 			AllowReauth: true,
 		}
