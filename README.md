@@ -74,6 +74,8 @@ export OS_APPLICATION_CREDENTIAL_SECRET=<APP_CRED_SECRET>
 export OS_VERIFY="false"
 export TLS_SKIP_VERIFY="true"
 
+# A custom hash function to use for Temp URL generation
+export OS_SWIFT_TEMP_URL_DIGEST=sha256
 # If you want to override Swift account ID
 export OS_SWIFT_ACCOUNT_OVERRIDE=<NEW_PROJECT_ID>
 # In case if you have non-standard reseller prefixes

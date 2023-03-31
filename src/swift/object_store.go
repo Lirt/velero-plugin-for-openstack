@@ -18,10 +18,11 @@ import (
 
 // ObjectStore is swift type that holds client and log
 type ObjectStore struct {
-	client     *gophercloud.ServiceClient
-	provider   *gophercloud.ProviderClient
-	log        logrus.FieldLogger
-	tempURLKey string
+	client        *gophercloud.ServiceClient
+	provider      *gophercloud.ProviderClient
+	log           logrus.FieldLogger
+	tempURLKey    string
+	tempURLDigest string
 }
 
 // NewObjectStore instantiates a Swift ObjectStore.
@@ -82,6 +83,12 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		o.client.Endpoint = u.String()
 		o.client.ResourceBase = ""
 		o.log.Infof("Successfully overrode service client endpoint: %v", o.client.Endpoint)
+	}
+
+	// override the Temp URL hash function
+	o.tempURLDigest = utils.GetEnv("OS_SWIFT_TEMP_URL_DIGEST", "")
+	if o.tempURLDigest != "" {
+		o.log.Infof("Successfully overrode Temp URL digest to %s", o.tempURLDigest)
 	}
 
 	// override the Temp URL key to generate a URL signature
@@ -226,6 +233,7 @@ func (o *ObjectStore) CreateSignedURL(container, object string, ttl time.Duratio
 		Method:     http.MethodGet,
 		TTL:        int(ttl.Seconds()),
 		TempURLKey: o.tempURLKey,
+		Digest:     o.tempURLDigest,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary URL for %q object in %q container: %v", object, container, err)
