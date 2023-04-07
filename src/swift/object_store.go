@@ -18,9 +18,11 @@ import (
 
 // ObjectStore is swift type that holds client and log
 type ObjectStore struct {
-	client   *gophercloud.ServiceClient
-	provider *gophercloud.ProviderClient
-	log      logrus.FieldLogger
+	client        *gophercloud.ServiceClient
+	provider      *gophercloud.ProviderClient
+	log           logrus.FieldLogger
+	tempURLKey    string
+	tempURLDigest string
 }
 
 // NewObjectStore instantiates a Swift ObjectStore.
@@ -34,7 +36,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 
 	err := utils.Authenticate(&o.provider, "swift", config, o.log)
 	if err != nil {
-		return fmt.Errorf("failed to authenticate against Openstack: %v", err)
+		return fmt.Errorf("failed to authenticate against OpenStack: %v", err)
 	}
 
 	// If we haven't set client before or we use multiple clouds - get new client
@@ -81,6 +83,18 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		o.client.Endpoint = u.String()
 		o.client.ResourceBase = ""
 		o.log.Infof("Successfully overrode service client endpoint: %v", o.client.Endpoint)
+	}
+
+	// override the Temp URL hash function
+	o.tempURLDigest = utils.GetEnv("OS_SWIFT_TEMP_URL_DIGEST", "")
+	if o.tempURLDigest != "" {
+		o.log.Infof("Successfully overrode Temp URL digest to %s", o.tempURLDigest)
+	}
+
+	// override the Temp URL key to generate a URL signature
+	o.tempURLKey = utils.GetEnv("OS_SWIFT_TEMP_URL_KEY", "")
+	if o.tempURLKey != "" {
+		o.log.Infof("Successfully overrode Temp URL key")
 	}
 
 	return nil
@@ -216,8 +230,10 @@ func (o *ObjectStore) CreateSignedURL(container, object string, ttl time.Duratio
 	log.Infof("CreateSignedURL")
 
 	url, err := objects.CreateTempURL(o.client, container, object, objects.CreateTempURLOpts{
-		Method: http.MethodGet,
-		TTL:    int(ttl.Seconds()),
+		Method:     http.MethodGet,
+		TTL:        int(ttl.Seconds()),
+		TempURLKey: o.tempURLKey,
+		Digest:     o.tempURLDigest,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary URL for %q object in %q container: %v", object, container, err)

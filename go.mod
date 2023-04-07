@@ -3,7 +3,7 @@ module github.com/Lirt/velero-plugin-swift
 go 1.19
 
 require (
-	github.com/gophercloud/gophercloud v1.0.0
+	github.com/gophercloud/gophercloud v1.3.1-0.20230331133731-6e0b5eac8554
 	github.com/gophercloud/utils v0.0.0-20220927104426-4113af8d2663
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.0
