@@ -1,12 +1,13 @@
 ---
-credentials:
-  extraSecretRef: "velero-credentials"
 configuration:
-  provider: community.openstack.org/openstack
   backupStorageLocation:
-    name: swift
+  - name: swift
+    provider: community.openstack.org/openstack
+    default: false
+    accessMode: ReadWrite
     bucket: my-swift-container
   volumeSnapshotLocation:
+  - provider: community.openstack.org/openstack
     name: cinder
 initContainers:
 - name: velero-plugin-openstack
