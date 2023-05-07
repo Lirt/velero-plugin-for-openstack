@@ -32,7 +32,10 @@ func NewObjectStore(log logrus.FieldLogger) *ObjectStore {
 
 // Init initializes the plugin. After v0.10.0, this can be called multiple times.
 func (o *ObjectStore) Init(config map[string]string) error {
-	o.log.Infof("ObjectStore.Init called")
+	var region string
+	o.log.WithFields(logrus.Fields{
+		"config": config,
+	}).Info("ObjectStore.Init called")
 
 	err := utils.Authenticate(&o.provider, "swift", config, o.log)
 	if err != nil {
@@ -58,7 +61,9 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create swift storage object: %v", err)
 		}
-		o.log.Infof("Successfully created service client with endpoint %v using region %v", o.client.Endpoint, region)
+		o.log.WithFields(logrus.Fields{
+			"region": region,
+		}).Info("Successfully created object storage service client")
 	}
 
 	// see https://specs.openstack.org/openstack/swift-specs/specs/in_progress/service_token.html
@@ -71,7 +76,11 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		}
 		u.Path = utils.ReplaceAccount(account, u.Path, resellerPrefixes)
 		o.client.Endpoint = u.String()
-		o.log.Infof("Successfully overrode service client endpoint with a %v account: %v", account, o.client.Endpoint)
+		o.log.WithFields(logrus.Fields{
+			"region":   region,
+			"account":  account,
+			"endpoint": o.client.Endpoint,
+		}).Info("Successfully overrode object storage service client endpoint by env OS_SWIFT_ACCOUNT_OVERRIDE")
 	}
 
 	endpoint := utils.GetEnv("OS_SWIFT_ENDPOINT_OVERRIDE", "")
@@ -82,19 +91,33 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		}
 		o.client.Endpoint = u.String()
 		o.client.ResourceBase = ""
-		o.log.Infof("Successfully overrode service client endpoint: %v", o.client.Endpoint)
+		o.log.WithFields(logrus.Fields{
+			"region":   region,
+			"account":  account,
+			"endpoint": o.client.Endpoint,
+		}).Info("Successfully overrode object storage service client endpoint by env OS_SWIFT_ENDPOINT_OVERRIDE")
 	}
 
 	// override the Temp URL hash function
 	o.tempURLDigest = utils.GetEnv("OS_SWIFT_TEMP_URL_DIGEST", "")
 	if o.tempURLDigest != "" {
-		o.log.Infof("Successfully overrode Temp URL digest to %s", o.tempURLDigest)
+		o.log.WithFields(logrus.Fields{
+			"region":        region,
+			"account":       account,
+			"endpoint":      o.client.Endpoint,
+			"tempURLDigest": o.tempURLDigest,
+		}).Info("Successfully overrode Temp URL digest by env OS_SWIFT_TEMP_URL_DIGEST")
 	}
 
 	// override the Temp URL key to generate a URL signature
 	o.tempURLKey = utils.GetEnv("OS_SWIFT_TEMP_URL_KEY", "")
 	if o.tempURLKey != "" {
-		o.log.Infof("Successfully overrode Temp URL key")
+		o.log.WithFields(logrus.Fields{
+			"region":        region,
+			"account":       account,
+			"endpoint":      o.client.Endpoint,
+			"tempURLDigest": o.tempURLDigest,
+		}).Info("Successfully overrode Temp URL key by env OS_SWIFT_TEMP_URL_KEY")
 	}
 
 	return nil
@@ -102,11 +125,10 @@ func (o *ObjectStore) Init(config map[string]string) error {
 
 // GetObject returns body of Swift object defined by container name and object
 func (o *ObjectStore) GetObject(container, object string) (io.ReadCloser, error) {
-	log := o.log.WithFields(logrus.Fields{
+	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
-	})
-	log.Infof("GetObject")
+	}).Info("ObjectStore.GetObject called")
 
 	res := objects.Download(o.client, container, object, nil)
 	if res.Err != nil {
@@ -118,11 +140,10 @@ func (o *ObjectStore) GetObject(container, object string) (io.ReadCloser, error)
 
 // PutObject uploads new object into container
 func (o *ObjectStore) PutObject(container string, object string, body io.Reader) error {
-	log := o.log.WithFields(logrus.Fields{
+	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
-	})
-	log.Infof("PutObject")
+	}).Info("ObjectStore.PutObject called")
 
 	createOpts := objects.CreateOpts{
 		Content: body,
@@ -137,17 +158,16 @@ func (o *ObjectStore) PutObject(container string, object string, body io.Reader)
 
 // ObjectExists does Get operation and validates result or error to find out if object exists
 func (o *ObjectStore) ObjectExists(container, object string) (bool, error) {
-	log := o.log.WithFields(logrus.Fields{
+	logWithFields := o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
 	})
-	log.Infof("ObjectExists")
-
+	logWithFields.Info("ObjectStore.ObjectExists called")
 	res := objects.Get(o.client, container, object, nil)
 
 	if res.Err != nil {
 		if _, ok := res.Err.(gophercloud.ErrDefault404); ok {
-			log.Infof("%q object doesn't yet exist in %q container.", object, container)
+			logWithFields.Info("Object doesn't yet exist in container")
 			return false, nil
 		}
 		return false, fmt.Errorf("cannot Get %q object from %q container: %v", object, container, res.Err)
@@ -158,12 +178,11 @@ func (o *ObjectStore) ObjectExists(container, object string) (bool, error) {
 
 // ListCommonPrefixes returns list of objects in container, that match specified prefix
 func (o *ObjectStore) ListCommonPrefixes(container, prefix, delimiter string) ([]string, error) {
-	log := o.log.WithFields(logrus.Fields{
+	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"prefix":    prefix,
 		"delimiter": delimiter,
-	})
-	log.Infof("ListCommonPrefixes")
+	}).Info("ObjectStore.ListCommonPrefixes called")
 
 	opts := objects.ListOpts{
 		Prefix:    prefix,
@@ -191,11 +210,10 @@ func (o *ObjectStore) ListCommonPrefixes(container, prefix, delimiter string) ([
 
 // ListObjects lists objects with prefix in all containers
 func (o *ObjectStore) ListObjects(container, prefix string) ([]string, error) {
-	log := o.log.WithFields(logrus.Fields{
+	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"prefix":    prefix,
-	})
-	log.Infof("ListObjects")
+	}).Info("ObjectStore.ListObjects called")
 
 	objects, err := o.ListCommonPrefixes(container, prefix, "/")
 	if err != nil {
@@ -207,11 +225,10 @@ func (o *ObjectStore) ListObjects(container, prefix string) ([]string, error) {
 
 // DeleteObject deletes object specified by object from container
 func (o *ObjectStore) DeleteObject(container, object string) error {
-	log := o.log.WithFields(logrus.Fields{
+	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
-	})
-	log.Infof("DeleteObject")
+	}).Info("ObjectStore.DeleteObject called")
 
 	_, err := objects.Delete(o.client, container, object, nil).Extract()
 	if err != nil {
@@ -223,11 +240,11 @@ func (o *ObjectStore) DeleteObject(container, object string) error {
 
 // CreateSignedURL creates temporary URL for object in container
 func (o *ObjectStore) CreateSignedURL(container, object string, ttl time.Duration) (string, error) {
-	log := o.log.WithFields(logrus.Fields{
+	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
-	})
-	log.Infof("CreateSignedURL")
+		"ttl":       ttl,
+	}).Info("ObjectStore.CreateSignedURL called")
 
 	url, err := objects.CreateTempURL(o.client, container, object, objects.CreateTempURLOpts{
 		Method:     http.MethodGet,
