@@ -26,11 +26,8 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
-| v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x |
+| v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x 1.11.x |
 | v0.4.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
-| v0.3.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
-| v0.2.x         | v1.4.x, v1.5.x |
-| v0.1.x         | v1.4.x, v1.5.x |
 
 ## OpenStack Authentication Configuration
 
@@ -216,15 +213,15 @@ Initialize velero plugin:
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.5.0 \
+       --plugins lirt/velero-plugin-for-openstack:v0.5.1 \
        --bucket <SWIFT_CONTAINER_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.5.0
+velero plugin add lirt/velero-plugin-for-openstack:v0.5.1
 ```
 
-Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.5.0-arm64`.
+Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.5.1-arm64`.
 
 Change configuration of `backupstoragelocations.velero.io`:
 
@@ -266,20 +263,24 @@ To use it, first create `values.yaml` file which will later be used in helm inst
 credentials:
   extraSecretRef: "velero-credentials"
 configuration:
-  provider: community.openstack.org/openstack
   backupStorageLocation:
+  - name: swift
+    provider: community.openstack.org/openstack
     bucket: my-swift-container
     # caCert: <CERT_CONTENTS_IN_BASE64>
-  # # Optional config
-  # config:
-  #   cloud: cloud1
-  #   region: fra
-  #   # If you want to enable restic you need to set resticRepoPrefix to this value:
-  #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
-  #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
+    # # Optional config
+    # config:
+    #   cloud: cloud1
+    #   region: fra
+    #   # If you want to enable restic you need to set resticRepoPrefix to this value:
+    #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
+    #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
+  volumeSnapshotLocation:
+  - name: cinder
+    provider: community.openstack.org/openstack
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.5.0
+  image: lirt/velero-plugin-for-openstack:v0.5.1
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
@@ -303,7 +304,7 @@ helm upgrade \
      --install \
      --namespace velero \
      --values values.yaml \
-     --version 2.32.1
+     --version 4.0.1
 ```
 
 ## Volume Backups
@@ -340,7 +341,9 @@ go build
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.5.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.5.1 \
+              --build-arg VERSION=v0.5.1 \
+              --build-arg GIT_SHA=f127eadab201f89de34d1e0ac212716752d60f4a \
               --no-cache \
               --push \
               .

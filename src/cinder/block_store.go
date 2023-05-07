@@ -13,7 +13,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"github.com/vmware-tanzu/velero/pkg/plugin/velero"
+	velerovolumesnapshotter "github.com/vmware-tanzu/velero/pkg/plugin/velero/volumesnapshotter/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,7 +32,7 @@ func NewBlockStore(log logrus.FieldLogger) *BlockStore {
 	return &BlockStore{log: log}
 }
 
-var _ velero.VolumeSnapshotter = (*BlockStore)(nil)
+var _ velerovolumesnapshotter.VolumeSnapshotter = (*BlockStore)(nil)
 
 // Init prepares the Cinder VolumeSnapshotter for usage using the provided map of
 // configuration key-value pairs. It returns an error if the VolumeSnapshotter
