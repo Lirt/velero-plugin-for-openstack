@@ -50,6 +50,8 @@ jobs:
           docker buildx build \
                  --file docker/Dockerfile \
                  --tag "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+                 --build-arg VERSION=${GITHUB_REF_NAME} \
+                 --build-arg GIT_SHA=${GITHUB_SHA} \
                  --platform linux/amd64 \
                  --load \
                  .
