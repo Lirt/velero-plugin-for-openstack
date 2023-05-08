@@ -11,7 +11,6 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/snapshots"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	velerovolumesnapshotter "github.com/vmware-tanzu/velero/pkg/plugin/velero/volumesnapshotter/v1"
 	v1 "k8s.io/api/core/v1"
@@ -46,7 +45,7 @@ func (b *BlockStore) Init(config map[string]string) error {
 	// Authenticate to OpenStack
 	err := utils.Authenticate(&b.provider, "cinder", config, b.log)
 	if err != nil {
-		return fmt.Errorf("failed to authenticate against OpenStack: %v", err)
+		return fmt.Errorf("failed to authenticate against OpenStack in block storage plugin: %w", err)
 	}
 
 	// If we haven't set client before or we use multiple clouds - get new client
@@ -63,7 +62,7 @@ func (b *BlockStore) Init(config map[string]string) error {
 			Region: region,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create cinder storage client: %v", err)
+			return fmt.Errorf("failed to create cinder storage client: %w", err)
 		}
 		b.log.WithFields(logrus.Fields{
 			"endpoint": b.client.Endpoint,
@@ -96,7 +95,7 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	err := snapshots.WaitForStatus(b.client, snapshotID, "available", snapshotReadyTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
-		return "", err
+		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshotID, err)
 	}
 	logWithFields.Info("Snapshot is in 'available' state")
 
@@ -114,7 +113,7 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	cinderVolume, err = volumes.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from snapshot")
-		return "", errors.WithStack(err)
+		return "", fmt.Errorf("failed to create volume %v from snapshot %v: %w", volumeName, snapshotID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -134,8 +133,8 @@ func (b *BlockStore) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, e
 
 	volume, err := volumes.Get(b.client, volumeID).Extract()
 	if err != nil {
-		logWithFields.Error("failed to get volume from Cinder")
-		return "", nil, fmt.Errorf("volume %v not found", volumeID)
+		logWithFields.Error("failed to get volume from cinder")
+		return "", nil, fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
 	}
 
 	return volume.VolumeType, nil, nil
@@ -152,8 +151,8 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 	// Get volume object from Cinder
 	cinderVolume, err := volumes.Get(b.client, volumeID).Extract()
 	if err != nil {
-		logWithFields.Error("failed to get volume from Cinder")
-		return false, err
+		logWithFields.Error("failed to get volume from cinder")
+		return false, fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
 	}
 
 	// Ready states:
@@ -189,7 +188,7 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 	// Note: we will wait for snapshot to be in ready state in CreateVolumeForSnapshot()
 	createResult, err := snapshots.Create(b.client, opts).Extract()
 	if err != nil {
-		return "", errors.WithStack(err)
+		return "", fmt.Errorf("failed to create snapshot %v from volume %v: %w", snapshotName, volumeID, err)
 	}
 	snapshotID := createResult.ID
 
@@ -209,7 +208,7 @@ func (b *BlockStore) DeleteSnapshot(snapshotID string) error {
 	// Delete snapshot from Cinder
 	err := snapshots.Delete(b.client, snapshotID).ExtractErr()
 	if err != nil {
-		return errors.WithStack(err)
+		return fmt.Errorf("failed to delete snapshot %v: %w", snapshotID, err)
 	}
 
 	return nil
@@ -224,19 +223,16 @@ func (b *BlockStore) GetVolumeID(unstructuredPV runtime.Unstructured) (string, e
 
 	pv := new(v1.PersistentVolume)
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
-		return "", errors.WithStack(err)
+		return "", fmt.Errorf("failed to convert from unstructured PV: %w", err)
 	}
 
 	var volumeID string
-
 	if pv.Spec.Cinder != nil {
 		volumeID = pv.Spec.Cinder.VolumeID
 	} else if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" || pv.Spec.CSI.Driver == "disk.csi.everest.io" {
 		volumeID = pv.Spec.CSI.VolumeHandle
-	}
-
-	if volumeID == "" {
-		return "", errors.New("volumeID not found")
+	} else {
+		return "", fmt.Errorf("persistent volume is missing 'spec.cinder.volumeID' or PV driver ('spec.csi.driver') doesn't match supported drivers(cinder.csi.openstack.org, disk.csi.everest.io)")
 	}
 
 	return volumeID, nil
@@ -252,20 +248,20 @@ func (b *BlockStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID s
 
 	pv := new(v1.PersistentVolume)
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
-		return nil, errors.WithStack(err)
+		return nil, fmt.Errorf("failed to convert from unstructured PV: %w", err)
 	}
 
 	if pv.Spec.Cinder != nil {
 		pv.Spec.Cinder.VolumeID = volumeID
-	} else if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" {
+	} else if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" || pv.Spec.CSI.Driver == "disk.csi.everest.io" {
 		pv.Spec.CSI.VolumeHandle = volumeID
 	} else {
-		return nil, errors.New("spec.cinder or spec.csi for cinder driver not found")
+		return nil, fmt.Errorf("persistent volume is missing 'spec.cinder.volumeID' or PV driver ('spec.csi.driver') doesn't match supported drivers(cinder.csi.openstack.org, disk.csi.everest.io)")
 	}
 
 	res, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pv)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, fmt.Errorf("failed to convert to unstructured PV: %w", err)
 	}
 
 	return &unstructured.Unstructured{Object: res}, nil

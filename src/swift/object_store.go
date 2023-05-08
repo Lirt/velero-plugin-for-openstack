@@ -39,7 +39,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 
 	err := utils.Authenticate(&o.provider, "swift", config, o.log)
 	if err != nil {
-		return fmt.Errorf("failed to authenticate against OpenStack: %v", err)
+		return fmt.Errorf("failed to authenticate against OpenStack in object storage plugin: %w", err)
 	}
 
 	// If we haven't set client before or we use multiple clouds - get new client
@@ -59,7 +59,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 			Region: region,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create swift storage object: %v", err)
+			return fmt.Errorf("failed to create swift storage object: %w", err)
 		}
 		o.log.WithFields(logrus.Fields{
 			"region": region,
@@ -72,7 +72,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 	if account != "" {
 		u, err := url.Parse(o.client.Endpoint)
 		if err != nil {
-			return fmt.Errorf("failed to parse swift storage client endpoint: %v", err)
+			return fmt.Errorf("failed to parse swift storage client endpoint: %w", err)
 		}
 		u.Path = utils.ReplaceAccount(account, u.Path, resellerPrefixes)
 		o.client.Endpoint = u.String()
@@ -87,7 +87,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 	if endpoint != "" {
 		u, err := url.Parse(endpoint)
 		if err != nil {
-			return fmt.Errorf("failed to parse swift storage client endpoint: %v", err)
+			return fmt.Errorf("failed to parse swift storage client endpoint: %w", err)
 		}
 		o.client.Endpoint = u.String()
 		o.client.ResourceBase = ""
@@ -132,7 +132,7 @@ func (o *ObjectStore) GetObject(container, object string) (io.ReadCloser, error)
 
 	res := objects.Download(o.client, container, object, nil)
 	if res.Err != nil {
-		return nil, fmt.Errorf("failed to download contents of %q object from %q container: %v", object, container, res.Err)
+		return nil, fmt.Errorf("failed to download contents of %q object from %q container: %w", object, container, res.Err)
 	}
 
 	return res.Body, nil
@@ -150,7 +150,7 @@ func (o *ObjectStore) PutObject(container string, object string, body io.Reader)
 	}
 
 	if _, err := objects.Create(o.client, container, object, createOpts).Extract(); err != nil {
-		return fmt.Errorf("failed to create new %q object in %q container: %v", object, container, err)
+		return fmt.Errorf("failed to create new %q object in %q container: %w", object, container, err)
 	}
 
 	return nil
@@ -170,7 +170,7 @@ func (o *ObjectStore) ObjectExists(container, object string) (bool, error) {
 			logWithFields.Info("Object doesn't yet exist in container")
 			return false, nil
 		}
-		return false, fmt.Errorf("cannot Get %q object from %q container: %v", object, container, res.Err)
+		return false, fmt.Errorf("cannot Get %q object from %q container: %w", object, container, res.Err)
 	}
 
 	return true, nil
@@ -192,12 +192,12 @@ func (o *ObjectStore) ListCommonPrefixes(container, prefix, delimiter string) ([
 
 	allPages, err := objects.List(o.client, container, opts).AllPages()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list objects in %q container: %v", container, err)
+		return nil, fmt.Errorf("failed to list objects in %q container: %w", container, err)
 	}
 
 	allObjects, err := objects.ExtractInfo(allPages)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract objects info from %q container: %v", container, err)
+		return nil, fmt.Errorf("failed to extract objects info from %q container: %w", container, err)
 	}
 
 	var objNames []string
@@ -217,7 +217,7 @@ func (o *ObjectStore) ListObjects(container, prefix string) ([]string, error) {
 
 	objects, err := o.ListCommonPrefixes(container, prefix, "/")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list objects in %q container with %q prefix: %v", container, prefix, err)
+		return nil, fmt.Errorf("failed to list objects in %q container with %q prefix: %w", container, prefix, err)
 	}
 
 	return objects, nil
@@ -232,7 +232,7 @@ func (o *ObjectStore) DeleteObject(container, object string) error {
 
 	_, err := objects.Delete(o.client, container, object, nil).Extract()
 	if err != nil {
-		return fmt.Errorf("failed to delete %q object from %q container: %v", object, container, err)
+		return fmt.Errorf("failed to delete %q object from %q container: %w", object, container, err)
 	}
 
 	return nil
@@ -253,7 +253,7 @@ func (o *ObjectStore) CreateSignedURL(container, object string, ttl time.Duratio
 		Digest:     o.tempURLDigest,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create temporary URL for %q object in %q container: %v", object, container, err)
+		return "", fmt.Errorf("failed to create temporary URL for %q object in %q container: %w", object, container, err)
 	}
 
 	return url, nil
