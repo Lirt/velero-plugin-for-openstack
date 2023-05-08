@@ -62,7 +62,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 
 	tlsVerify, err := strconv.ParseBool(GetEnv("TLS_SKIP_VERIFY", "false"))
 	if err != nil {
-		return fmt.Errorf("cannot parse boolean from TLS_SKIP_VERIFY environment variable: %v", err)
+		return fmt.Errorf("cannot parse boolean from TLS_SKIP_VERIFY environment variable: %w", err)
 	}
 
 	tlsConfig := &tls.Config{InsecureSkipVerify: tlsVerify}
