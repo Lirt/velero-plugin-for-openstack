@@ -25,4 +25,4 @@ jobs:
           no-cache: true
           build-args: |
             VERSION=${{ github.ref_name }}
-            GIT_SHA=${{ GITHUB_SHA }}
+            GIT_SHA=${{ github.sha }}
