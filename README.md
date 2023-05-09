@@ -213,15 +213,15 @@ Initialize velero plugin:
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.5.1 \
+       --plugins lirt/velero-plugin-for-openstack:v0.5.2 \
        --bucket <SWIFT_CONTAINER_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.5.1
+velero plugin add lirt/velero-plugin-for-openstack:v0.5.2
 ```
 
-Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.5.1-arm64`.
+Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.5.2-arm64`.
 
 Change configuration of `backupstoragelocations.velero.io`:
 
@@ -280,7 +280,7 @@ configuration:
     provider: community.openstack.org/openstack
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.5.1
+  image: lirt/velero-plugin-for-openstack:v0.5.2
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
@@ -341,9 +341,9 @@ go build
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.5.1 \
-              --build-arg VERSION=v0.5.1 \
-              --build-arg GIT_SHA=f127eadab201f89de34d1e0ac212716752d60f4a \
+              --tag lirt/velero-plugin-for-openstack:v0.5.2 \
+              --build-arg VERSION=v0.5.2 \
+              --build-arg GIT_SHA=somesha \
               --no-cache \
               --push \
               .
