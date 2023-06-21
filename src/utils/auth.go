@@ -8,9 +8,20 @@ import (
 	"strconv"
 
 	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/utils/client"
 	"github.com/gophercloud/utils/openstack/clientconfig"
 	"github.com/sirupsen/logrus"
 )
+
+// osDebugger satisfies the client.Logger interface to print debug API logs
+type osDebugger struct {
+	log logrus.FieldLogger
+}
+
+func (d osDebugger) Printf(format string, args ...interface{}) {
+	d.log.Debugf(format, args...)
+}
 
 // Authenticate to OpenStack and write client result to **pc
 func Authenticate(pc **gophercloud.ProviderClient, service string, config map[string]string, log logrus.FieldLogger) error {
@@ -68,15 +79,36 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 	tlsConfig := &tls.Config{InsecureSkipVerify: tlsVerify}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsConfig
-	clientOpts.HTTPClient = &http.Client{Transport: transport}
 
-	*pc, err = clientconfig.AuthenticatedClient(&clientOpts)
+	ao, err := clientconfig.AuthOptions(&clientOpts)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to build auth options: %w", err)
+	}
+
+	*pc, err = openstack.NewClient(ao.IdentityEndpoint)
+	if err != nil {
+		return fmt.Errorf("failed to create a provider: %w", err)
+	}
+	(*pc).HTTPClient.Transport = transport
+
+	// enable API debug logs
+	if log, ok := log.(*logrus.Logger); ok && log.IsLevelEnabled(logrus.DebugLevel) {
+		(*pc).HTTPClient.Transport = &client.RoundTripper{
+			Rt: transport,
+			Logger: osDebugger{log.WithFields(logrus.Fields{
+				"source":    "openstack",
+				"component": service,
+			})},
+		}
 	}
 
 	// set user agent with a version
 	(*pc).UserAgent.Prepend("velero-plugin-for-openstack/" + Version + "@" + GitSHA)
+
+	err = openstack.Authenticate(*pc, *ao)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate: %w", err)
+	}
 
 	log.Infof("Authentication against identity endpoint %v was successful", (*pc).IdentityEndpoint)
 
