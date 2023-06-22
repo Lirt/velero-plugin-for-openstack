@@ -4,7 +4,7 @@
 FROM --platform=$BUILDPLATFORM golang:1.19-alpine AS build
 
 ARG REPOSITORY=Lirt
-ARG PLUGIN=velero-plugin-swift
+ARG PLUGIN=velero-plugin-for-openstack
 ARG PKG=github.com/Lirt/velero-plugin-for-openstack
 ARG VERSION=0.0.0
 ARG GIT_SHA=nil
@@ -25,7 +25,7 @@ ENV GOPROXY=https://proxy.golang.org
 
 WORKDIR /go/src/github.com/${REPOSITORY}/${PLUGIN}
 COPY . .
-RUN export LDFLAGS="-X ${PKG}/src/utils.Version=${VERSION} -X ${PKG}/src/utils.gitSHA=${GIT_SHA}" \
+RUN export LDFLAGS="-X ${PKG}/src/utils.Version=${VERSION} -X ${PKG}/src/utils.GitSHA=${GIT_SHA}" \
     export GOARM=$( echo "${GOARM}" | cut -c2-) && \
     CGO_ENABLED=0 \
       go build \
