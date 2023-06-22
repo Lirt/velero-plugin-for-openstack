@@ -62,3 +62,43 @@ func TestRand(t *testing.T) {
 		t.Errorf("failed to verify random seed generator %v != %v", a, b)
 	}
 }
+
+func TestCompareMicroversions(t *testing.T) {
+	type vals struct {
+		want string
+		op   string
+		have string
+		res  bool
+	}
+	tests := []vals{
+		{
+			"2.7", "lte", "2.50", true,
+		},
+		{
+			"1.7", "lte", "2.50", true,
+		},
+		{
+			"3.7", "lte", "2.50", false,
+		},
+		{
+			"2.50", "lte", "2.50", true,
+		},
+		{
+			"2.7", "gte", "2.50", false,
+		},
+		{
+			"1.50", "gte", "2.50", false,
+		},
+		{
+			"2.50", "gte", "2.50", true,
+		},
+	}
+
+	for i, test := range tests {
+		if v, err := CompareMicroversions(test.op, test.want, test.have); err != nil {
+			t.Errorf("[%d] test failed: %v", i, err)
+		} else if test.res != v {
+			t.Errorf("[%d] test failed: expected %t, got %t", i, test.res, v)
+		}
+	}
+}

@@ -2,23 +2,27 @@ package manila
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/apiversions"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/shareaccessrules"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/shares"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/snapshots"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	velerovolumesnapshotter "github.com/vmware-tanzu/velero/pkg/plugin/velero/volumesnapshotter/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+)
+
+const (
+	defaultCsiManilaDriverName = "nfs.manila.csi.openstack.org"
+	minSupportedMicroversion   = "2.7"
+	getAccessRulesMicroversion = "2.45"
 )
 
 // FSStore is a plugin for containing state for the Manila Shared Filesystem
@@ -31,7 +35,9 @@ type FSStore struct {
 
 // NewFSStore instantiates a Manila Shared Filesystem Snapshotter.
 func NewFSStore(log logrus.FieldLogger) *FSStore {
-	return &FSStore{log: log}
+	return &FSStore{
+		log: log,
+	}
 }
 
 var _ velerovolumesnapshotter.VolumeSnapshotter = (*FSStore)(nil)
@@ -44,6 +50,9 @@ func (b *FSStore) Init(config map[string]string) error {
 		"config": config,
 	}).Info("FSStore.Init called")
 	b.config = config
+
+	// set default Manila CSI driver name
+	b.config["driver"] = utils.GetConf(b.config, "driver", defaultCsiManilaDriverName)
 
 	// Authenticate to Openstack
 	err := utils.Authenticate(&b.provider, "manila", config, b.log)
@@ -68,13 +77,28 @@ func (b *FSStore) Init(config map[string]string) error {
 			return fmt.Errorf("failed to create manila storage client: %w", err)
 		}
 
-		// TODO: rewise
-		b.client.Microversion = "2.57"
-
-		b.log.WithFields(logrus.Fields{
+		logWithFields := b.log.WithFields(logrus.Fields{
 			"endpoint": b.client.Endpoint,
 			"region":   region,
-		}).Info("Successfully created shared filesystem service client")
+		})
+
+		// set minimum supported Manila API microversion by default
+		b.client.Microversion = minSupportedMicroversion
+		if mv, err := b.getManilaMicroversion(); err != nil {
+			logWithFields.Warningf("Failed to obtain supported Manila microversions (using the default one: %v): %v", b.client.Microversion, err)
+		} else {
+			ok, err := utils.CompareMicroversions("lte", getAccessRulesMicroversion, mv)
+			if err != nil {
+				logWithFields.Warningf("Failed to compare supported Manila microversions (using the default one: %v): %v", b.client.Microversion, err)
+			}
+
+			if ok {
+				b.client.Microversion = getAccessRulesMicroversion
+				logWithFields.Infof("Setting the supported %v microversion", b.client.Microversion)
+			}
+		}
+
+		logWithFields.Info("Successfully created shared filesystem service client")
 	}
 
 	return nil
@@ -84,257 +108,311 @@ func (b *FSStore) Init(config map[string]string) error {
 // availability zone, initialized from the provided snapshot and with the specified type.
 // IOPS is ignored as it is not used in Manila.
 func (b *FSStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
-	b.log.Infof("CreateVolumeFromSnapshot called", snapshotID, volumeType, volumeAZ)
+	shareReadyTimeout := 300
+	snapshotReadyTimeout := 300
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"snapshotID":           snapshotID,
+		"volumeType":           volumeType,
+		"volumeAZ":             volumeAZ,
+		"shareReadyTimeout":    shareReadyTimeout,
+		"snapshotReadyTimeout": snapshotReadyTimeout,
+	})
+	logWithFields.Info("FSStore.CreateVolumeFromSnapshot called")
 
-	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(rand.Uint64(), 10))
+	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	// Make sure snapshot is in available status
+	// Possible values for snapshot status:
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/snapshots.inc#share-snapshots
+	logWithFields.Info("Waiting for snapshot to be in 'available' status")
 
-	sp, err := snapshots.Get(b.client, snapshotID).Extract()
+	snapshot, err := b.waitForSnapshotStatus(snapshotID, "available", snapshotReadyTimeout)
 	if err != nil {
-		b.log.Error(err)
+		logWithFields.Error("snapshot didn't get into 'available' status within the time limit")
+		return "", fmt.Errorf("snapshot %v didn't get into 'available' status within the time limit: %w", snapshotID, err)
+	}
+	logWithFields.Info("Snapshot is in 'available' status")
+
+	// get original share with its metadata
+	originShare, err := shares.Get(b.client, snapshot.ShareID).Extract()
+	if err != nil {
+		logWithFields.Errorf("failed to get original share %v from manila", snapshot.ShareID)
+		return "", fmt.Errorf("failed to get original share %v from manila: %w", snapshot.ShareID, err)
 	}
 
-	// Snapshot should be already in ready state because we wait for it when creating
-	if sp.Status == "available" {
-		b.log.Infof("Snapshot is in 'available' state", snapshotID)
-	} else {
-		b.log.Errorf("Snapshot is not in 'available' state", snapshotID)
+	// get original share access rule
+	rule, err := b.getShareAccessRule(logWithFields, snapshot.ShareID)
+	if err != nil {
 		return "", err
 	}
 
-	// Create Manila Volume from snapshot (backup)
-	b.log.Infof("Starting to create volume from snapshot")
-
-	createOpts := &shares.CreateOpts{
+	// Create Manila Share from snapshot (backup)
+	logWithFields.Infof("Starting to create share from snapshot")
+	opts := &shares.CreateOpts{
+		ShareProto:       snapshot.ShareProto,
+		Size:             snapshot.Size,
 		AvailabilityZone: volumeAZ,
 		Name:             volumeName,
-		SnapshotID:       sp.ID,
-		ShareProto:       sp.ShareProto,
-		Size:             sp.Size,
+		SnapshotID:       snapshotID,
+		Metadata:         originShare.Metadata,
 	}
-	share, err := shares.Create(b.client, createOpts).Extract()
-
+	share, err := shares.Create(b.client, opts).Extract()
 	if err != nil {
-		b.log.Errorf("failed to create volume from snapshot", snapshotID)
-		return "", errors.WithStack(err)
+		logWithFields.Errorf("failed to create share from snapshot")
+		return "", fmt.Errorf("failed to create share %v from snapshot %v: %w", volumeName, snapshotID, err)
 	}
 
-	// Wait the share to be ready
-	ready, err := b.IsVolumeReady(share.ID, volumeAZ)
-	shareReadyTimeout := 300
-	for shareReadyTimeout > 0 {
-		time.Sleep(5 * time.Second)
-		shareReadyTimeout -= 5
-		ready, err = b.IsVolumeReady(share.ID, volumeAZ)
-		if err != nil {
-			b.log.Error(err)
-		}
+	// Make sure share is in available status
+	// Possible values for share status:
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/shares.inc#shares
+	logWithFields.Info("Waiting for snapshot to be in 'available' status")
 
-		if ready {
-			break
-		}
+	_, err = b.waitForShareStatus(share.ID, "available", shareReadyTimeout)
+	if err != nil {
+		logWithFields.Error("share didn't get into 'available' status within the time limit")
+		return "", fmt.Errorf("share %v didn't get into 'available' status within the time limit: %w", share.ID, err)
 	}
 
-	if ready {
-		b.log.Infof("Backup volume was created", volumeName, share.ID)
-	} else {
-		b.log.Errorf("share didn't get into 'available' state within the time limit", share.ID, shareReadyTimeout)
-		return "", err
+	// grant the only one supported share access from the original share
+	accessOpts := &shares.GrantAccessOpts{
+		AccessType:  rule.AccessType,
+		AccessTo:    rule.AccessTo,
+		AccessLevel: rule.AccessLevel,
+	}
+	shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
+	if err != nil {
+		logWithFields.Error("failed to grant an access to manila share")
+		return "", fmt.Errorf("failed to grant an access to manila share %v: %w", share.ID, err)
 	}
 
+	logWithFields.WithFields(logrus.Fields{
+		"shareID":       share.ID,
+		"shareAccessID": shareAccess.ID,
+	}).Info("Backup share was created")
 	return share.ID, nil
 }
 
+// GetVolumeInfo returns type of the specified volume in the given availability zone.
+// IOPS is not used as it is not supported by Manila.
 func (b *FSStore) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, error) {
-	b.log.Infof("GetVolumeInfo called", volumeID, volumeAZ)
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"volumeID": volumeID,
+		"volumeAZ": volumeAZ,
+	})
+	logWithFields.Info("FSStore.GetVolumeInfo called")
 
-	volume, err := shares.Get(b.client, volumeID).Extract()
+	share, err := shares.Get(b.client, volumeID).Extract()
 	if err != nil {
-		b.log.Errorf("failed to get volume %v from Manila: %v", volumeID, err)
-		return "", nil, fmt.Errorf("failed to get volume %v", volumeID)
+		logWithFields.Error("failed to get share from manila")
+		return "", nil, fmt.Errorf("failed to get share %v from manila: %w", volumeID, err)
 	}
 
-	return volume.VolumeType, nil, nil
+	return share.VolumeType, nil, nil
 }
 
-// IsVolumeReady Check if the volume is in one of the ready states.
+// IsVolumeReady Check if the volume is in one of the available statuses.
 func (b *FSStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err error) {
-	b.log.Infof("IsVolumeReady called", volumeID, volumeAZ)
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"volumeID": volumeID,
+		"volumeAZ": volumeAZ,
+	})
+	logWithFields.Info("FSStore.IsVolumeReady called")
 
-	// Get volume object from Manila
-	manilaVolume, err := shares.Get(b.client, volumeID).Extract()
+	// Get share object from Manila
+	share, err := shares.Get(b.client, volumeID).Extract()
 	if err != nil {
-		b.log.Errorf("failed to get volume %v from Manila", volumeID)
-		return false, err
+		logWithFields.Error("failed to get share from manila")
+		return false, fmt.Errorf("failed to get share %v from manila: %w", volumeID, err)
 	}
 
-	// Ready states:
-	//   https://github.com/openstack/manila/blob/master/api-ref/source/shares.inc
-	if manilaVolume.Status == "available" {
+	// Ready statuses:
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/shares.inc#shares
+	if share.Status == "available" {
 		return true, nil
 	}
 
-	// Volume is not in one of the "ready" states
-	return false, fmt.Errorf("volume %v is not in ready state, the status is %v", volumeID, manilaVolume.Status)
+	// Share is not in one of the "available" statuses
+	return false, fmt.Errorf("share %v is not in available status, the status is %v", volumeID, share.Status)
 }
 
-// CreateSnapshot creates a snapshot of the specified volume, and does NOT apply any provided
-// set of tags to the snapshot.
+// CreateSnapshot creates a snapshot of the specified volume, and does NOT
+// apply any provided set of tags to the snapshot.
 func (b *FSStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
-	b.log.Infof("CreateSnapshot called", volumeID, volumeAZ, tags)
-	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(rand.Uint64(), 10))
+	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"snapshotName": snapshotName,
+		"volumeID":     volumeID,
+		"volumeAZ":     volumeAZ,
+		"tags":         tags,
+	})
+	logWithFields.Info("FSStore.CreateSnapshot called")
 
-	b.log.Infof("Trying to create snapshot", snapshotName)
-
-	// NOTE: Because the `Description` field can only support up to 255 bytes,
-	//       it seems to be too small to have `tags` stored in the snapshot
-	description := "velero backup"
 	opts := snapshots.CreateOpts{
-		Name:               snapshotName,
-		Description:        description,
-		ShareID:            volumeID,
-		DisplayName:        snapshotName,
-		DisplayDescription: description,
+		Name:        snapshotName,
+		Description: "Velero snapshot",
+		ShareID:     volumeID,
 	}
 
-	createResult, err := snapshots.Create(b.client, opts).Extract()
+	// Note: we will wait for snapshot to be in available status in CreateVolumeForSnapshot()
+	snapshot, err := snapshots.Create(b.client, opts).Extract()
 	if err != nil {
-		b.log.Error(err)
-		return "", errors.WithStack(err)
-	}
-	snapshotID := createResult.ID
-
-	var snapshotReadyTimeout int
-	snapshotReadyTimeout = 300
-	// Make sure snapshot is in ready state
-	// Possible values for snapshot state:
-	//   https://github.com/openstack/manila/blob/master/api-ref/source/snapshots.inc
-	b.log.Infof("Waiting for snapshot to be in 'available' state", snapshotID, snapshotReadyTimeout)
-
-	sp, err := snapshots.Get(b.client, snapshotID).Extract()
-	if err != nil {
-		b.log.Error(err)
-	}
-	for sp.Status != "available" && snapshotReadyTimeout > 0 {
-		time.Sleep(5 * time.Second)
-		snapshotReadyTimeout -= 5
-		sp, err = snapshots.Get(b.client, snapshotID).Extract()
-		if err != nil {
-			b.log.Error(err)
-		}
-	}
-	if sp.Status == "available" {
-		b.log.Infof("Snapshot is in 'available' state", snapshotID)
-	} else {
-		b.log.Errorf("snapshot didn't get into 'available' state within the time limit", snapshotID, snapshotReadyTimeout)
-		return "", err
+		logWithFields.Error("failed to create snapshot from share")
+		return "", fmt.Errorf("failed to create snapshot %v from share %v: %w", snapshotName, volumeID, err)
 	}
 
-	b.log.Infof("Snapshot finished successfuly", snapshotName, snapshotID)
-	return snapshotID, nil
+	logWithFields.WithFields(logrus.Fields{
+		"snapshotID": snapshot.ID,
+	}).Info("Snapshot finished successfuly")
+	return snapshot.ID, nil
 }
 
 // DeleteSnapshot deletes the specified volume snapshot.
 func (b *FSStore) DeleteSnapshot(snapshotID string) error {
-	b.log.Infof("DeleteSnapshot called", snapshotID)
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"snapshotID": snapshotID,
+	})
+	logWithFields.Info("FSStore.DeleteSnapshot called")
 
 	// Delete snapshot from Manila
-	b.log.Infof("Deleting Snapshot with ID", snapshotID)
 	err := snapshots.Delete(b.client, snapshotID).ExtractErr()
 	if err != nil {
-		return errors.WithStack(err)
+		logWithFields.Error("failed to delete snapshot")
+		return fmt.Errorf("failed to delete snapshot %v: %w", snapshotID, err)
 	}
+
 	return nil
 }
 
 // GetVolumeID returns the specific identifier for the PersistentVolume.
 func (b *FSStore) GetVolumeID(unstructuredPV runtime.Unstructured) (string, error) {
-	b.log.Infof("GetVolumeID called", unstructuredPV)
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"unstructuredPV": unstructuredPV,
+	})
+	logWithFields.Info("FSStore.GetVolumeID called")
 
 	pv := new(v1.PersistentVolume)
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
-		return "", errors.WithStack(err)
+		return "", fmt.Errorf("failed to convert from unstructured PV: %w", err)
 	}
 
-	var volumeID string
-
-	if pv.Spec.CSI.Driver == "nfs.manila.csi.openstack.org" {
-		volumeID = pv.Spec.CSI.VolumeHandle
+	if pv.Spec.CSI == nil {
+		return "", nil
 	}
 
-	if volumeID == "" {
-		return "", errors.New("volumeID not found")
+	if pv.Spec.CSI.Driver == b.config["driver"] {
+		return pv.Spec.CSI.VolumeHandle, nil
 	}
 
-	return volumeID, nil
+	b.log.Infof("Unable to handle CSI driver: %s", pv.Spec.CSI.Driver)
+
+	return "", nil
 }
 
 // SetVolumeID sets the specific identifier for the PersistentVolume.
 func (b *FSStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID string) (runtime.Unstructured, error) {
-	b.log.Infof("SetVolumeID called", unstructuredPV, volumeID)
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"unstructuredPV": unstructuredPV,
+		"volumeID":       volumeID,
+	})
+	logWithFields.Info("FSStore.SetVolumeID called")
 
 	pv := new(v1.PersistentVolume)
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
-		return nil, errors.WithStack(err)
+		return nil, fmt.Errorf("failed to convert from unstructured PV: %w", err)
 	}
 
-	if pv.Spec.CSI.Driver == "nfs.manila.csi.openstack.org" {
-		pv.Spec.CSI.VolumeHandle = volumeID
-		pv.Spec.CSI.VolumeAttributes["shareID"] = volumeID
-
-		// To determine the share access to be created, we need to find along this path
-		// new share -> snapshot -> old share -> old share's share access
-
-		share, err := shares.Get(b.client, volumeID).Extract()
-		if err != nil {
-			b.log.Error(err)
-			return nil, errors.WithStack(err)
-		}
-
-		snapshot, err := snapshots.Get(b.client, share.SnapshotID).Extract()
-		if err != nil {
-			b.log.Error(err)
-			return nil, errors.WithStack(err)
-		}
-
-		originShare, err := shares.Get(b.client, snapshot.ShareID).Extract()
-		if err != nil {
-			b.log.Error(err)
-			return nil, errors.WithStack(err)
-		}
-
-		rules, err := shareaccessrules.List(b.client, originShare.ID).Extract()
-		if err != nil {
-			b.log.Error(err)
-			return nil, errors.WithStack(err)
-		}
-
-		if len(rules) < 1 {
-			b.log.Error("No access rules found in the origin share %v", originShare.ID)
-			return nil, errors.WithStack(err)
-		}
-
-		// Grant the first access as share access
-		grantAccessOpts := &shares.GrantAccessOpts{
-			AccessType:  rules[0].AccessType,
-			AccessTo:    rules[0].AccessTo,
-			AccessLevel: rules[0].AccessLevel,
-		}
-		accessRignt, err := shares.GrantAccess(b.client, volumeID, grantAccessOpts).Extract()
-		if err != nil {
-			b.log.Error(err)
-			return nil, errors.WithStack(err)
-		}
-
-		pv.Spec.CSI.VolumeAttributes["shareAccessID"] = accessRignt.ID
-
-	} else {
-		return nil, errors.New("spec.csi for manila driver not found")
+	if pv.Spec.CSI.Driver != b.config["driver"] {
+		return nil, fmt.Errorf("PV driver ('spec.csi.driver') doesn't match supported driver (%s)", b.config["driver"])
 	}
+
+	// get share access rule
+	rule, err := b.getShareAccessRule(logWithFields, volumeID)
+	if err != nil {
+		return nil, err
+	}
+
+	pv.Spec.CSI.VolumeHandle = volumeID
+	pv.Spec.CSI.VolumeAttributes["shareID"] = volumeID
+	pv.Spec.CSI.VolumeAttributes["shareAccessID"] = rule.ID
 
 	res, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pv)
 	if err != nil {
-		return nil, errors.WithStack(err)
+		return nil, fmt.Errorf("failed to convert to unstructured PV: %w", err)
 	}
 
 	return &unstructured.Unstructured{Object: res}, nil
+}
+
+func (b *FSStore) getShareAccessRule(logWithFields *logrus.Entry, volumeID string) (*shares.AccessRight, error) {
+	var rules interface{}
+	var err error
+	// deprecated API call
+	if b.client.Microversion == minSupportedMicroversion {
+		rules, err = shares.ListAccessRights(b.client, volumeID).Extract()
+	} else {
+		rules, err = shareaccessrules.List(b.client, volumeID).Extract()
+	}
+	if err != nil {
+		logWithFields.Errorf("failed to list share %v access rules from manila", volumeID)
+		return nil, fmt.Errorf("failed to list share %v access rules from manila: %w", volumeID, err)
+	}
+
+	switch rules := rules.(type) {
+	case []shares.AccessRight:
+		for _, rule := range rules {
+			return &rule, nil
+		}
+	case []shareaccessrules.ShareAccess:
+		for _, rule := range rules {
+			return &shares.AccessRight{
+				ID:          rule.ID,
+				ShareID:     rule.ShareID,
+				AccessKey:   rule.AccessKey,
+				AccessLevel: rule.AccessLevel,
+				AccessTo:    rule.AccessTo,
+				AccessType:  rule.AccessType,
+				State:       rule.State,
+			}, nil
+		}
+	}
+
+	logWithFields.Errorf("failed to find share %v access rules from manila", volumeID)
+	return nil, fmt.Errorf("failed to find share %v access rules from manila: %w", volumeID, err)
+}
+
+func (b *FSStore) getManilaMicroversion() (string, error) {
+	api, err := apiversions.Get(b.client, "v2").Extract()
+	if err != nil {
+		return "", err
+	}
+	return api.Version, nil
+}
+
+func (b *FSStore) waitForShareStatus(id, status string, secs int) (current *shares.Share, err error) {
+	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+		current, err = shares.Get(b.client, id).Extract()
+		if err != nil {
+			return false, err
+		}
+
+		if current.Status == status {
+			return true, nil
+		}
+
+		return false, nil
+	})
+}
+
+func (b *FSStore) waitForSnapshotStatus(id, status string, secs int) (current *snapshots.Snapshot, err error) {
+	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+		current, err = snapshots.Get(b.client, id).Extract()
+		if err != nil {
+			return false, err
+		}
+
+		if current.Status == status {
+			return true, nil
+		}
+
+		return false, nil
+	})
 }

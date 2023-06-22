@@ -276,8 +276,15 @@ configuration:
     #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
     #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
   volumeSnapshotLocation:
+  # for Cinder block storage
   - name: cinder
     provider: community.openstack.org/openstack
+  # for Manila shared filesystem storage
+  - name: manila
+    provider: community.openstack.org/openstack-manila
+    config:
+      # optional Manila CSI driver name (default: nfs.manila.csi.openstack.org)
+      driver: ceph.manila.csi.openstack.org
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.5.2
