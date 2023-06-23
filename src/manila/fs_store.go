@@ -275,6 +275,10 @@ func (b *FSStore) DeleteSnapshot(snapshotID string) error {
 	// Delete snapshot from Manila
 	err := snapshots.Delete(b.client, snapshotID).ExtractErr()
 	if err != nil {
+		if _, ok := err.(gophercloud.ErrDefault404); ok {
+			logWithFields.Info("snapshot is already deleted")
+			return nil
+		}
 		logWithFields.Error("failed to delete snapshot")
 		return fmt.Errorf("failed to delete snapshot %v: %w", snapshotID, err)
 	}
