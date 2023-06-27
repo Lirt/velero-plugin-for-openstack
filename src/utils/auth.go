@@ -74,6 +74,10 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 	if err != nil {
 		return err
 	}
+
+	// set user agent with a version
+	(*pc).UserAgent.Prepend("velero-plugin-for-openstack/" + Version + "@" + GitSHA)
+
 	log.Infof("Authentication against identity endpoint %v was successful", (*pc).IdentityEndpoint)
 
 	return nil
