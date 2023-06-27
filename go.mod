@@ -1,4 +1,4 @@
-module github.com/Lirt/velero-plugin-swift
+module github.com/Lirt/velero-plugin-for-openstack
 
 go 1.19
 

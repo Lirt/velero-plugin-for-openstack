@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Lirt/velero-plugin-swift/src/utils"
+	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/snapshots"
