@@ -17,6 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+const (
+	snapshotReadyTimeout = 300
+)
+
 // BlockStore is a plugin for containing state for the Cinder Block Storage
 type BlockStore struct {
 	client   *gophercloud.ServiceClient
@@ -76,7 +80,6 @@ func (b *BlockStore) Init(config map[string]string) error {
 // availability zone, initialized from the provided snapshot and with the specified type.
 // IOPS is ignored as it is not used in Cinder.
 func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
-	snapshotReadyTimeout := 300
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"snapshotID":           snapshotID,
 		"volumeType":           volumeType,
@@ -168,10 +171,11 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields := b.log.WithFields(logrus.Fields{
-		"snapshotName": snapshotName,
-		"volumeID":     volumeID,
-		"volumeAZ":     volumeAZ,
-		"tags":         tags,
+		"snapshotName":         snapshotName,
+		"volumeID":             volumeID,
+		"volumeAZ":             volumeAZ,
+		"tags":                 tags,
+		"snapshotReadyTimeout": snapshotReadyTimeout,
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
@@ -183,12 +187,18 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 		Force:       true,
 	}
 
-	// Note: we will wait for snapshot to be in ready state in CreateVolumeForSnapshot()
 	snapshot, err := snapshots.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create snapshot from volume")
 		return "", fmt.Errorf("failed to create snapshot %v from volume %v: %w", snapshotName, volumeID, err)
 	}
+
+	err = snapshots.WaitForStatus(b.client, snapshot.ID, "available", snapshotReadyTimeout)
+	if err != nil {
+		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
+		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshot.ID, err)
+	}
+	logWithFields.Info("Snapshot is in 'available' state")
 
 	logWithFields.WithFields(logrus.Fields{
 		"snapshotID": snapshot.ID,
