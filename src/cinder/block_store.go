@@ -22,6 +22,11 @@ const (
 )
 
 var (
+	// a list of supported snapshot methods
+	supportedMethods = []string{
+		"snapshot",
+		"clone",
+	}
 	// a list of supported Cinder CSI drivers
 	supportedDrivers = []string{
 		// standard Cinder CSI driver
@@ -49,6 +54,7 @@ type BlockStore struct {
 	config          map[string]string
 	volumeTimeout   int
 	snapshotTimeout int
+	cloneTimeout    int
 	log             logrus.FieldLogger
 }
 
@@ -68,6 +74,12 @@ func (b *BlockStore) Init(config map[string]string) error {
 	}).Info("BlockStore.Init called")
 	b.config = config
 
+	// parse the snapshot method
+	b.config["method"] = utils.GetConf(b.config, "method", "snapshot")
+	if !utils.SliceContains(supportedMethods, b.config["method"]) {
+		return fmt.Errorf("unsupported %q snapshot method, supported methods: %q", b.config["method"], supportedMethods)
+	}
+
 	// parse timeouts
 	var err error
 	b.volumeTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "volumeTimeout", defaultTimeout))
@@ -77,6 +89,10 @@ func (b *BlockStore) Init(config map[string]string) error {
 	b.snapshotTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "snapshotTimeout", defaultTimeout))
 	if err != nil {
 		return fmt.Errorf("cannot parse time from snapshotTimeout config variable: %w", err)
+	}
+	b.cloneTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "cloneTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from cloneTimeout config variable: %w", err)
 	}
 
 	// Authenticate to OpenStack
@@ -114,16 +130,27 @@ func (b *BlockStore) Init(config map[string]string) error {
 // availability zone, initialized from the provided snapshot and with the specified type.
 // IOPS is ignored as it is not used in Cinder.
 func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
+	switch b.config["method"] {
+	case "clone":
+		return b.createVolumeFromClone(snapshotID, volumeType, volumeAZ)
+	}
+
+	return b.createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ)
+}
+
+func (b *BlockStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string) (string, error) {
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"snapshotID":      snapshotID,
 		"volumeType":      volumeType,
 		"volumeAZ":        volumeAZ,
 		"snapshotTimeout": b.snapshotTimeout,
 		"volumeTimeout":   b.volumeTimeout,
+		"method":          b.config["method"],
 	})
 	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
 
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	// Make sure snapshot is in ready state
 	logWithFields.Info("Waiting for snapshot to be in 'available' state")
 
 	snapshot, err := b.waitForSnapshotStatus(snapshotID, snapshotStatuses, b.snapshotTimeout)
@@ -167,6 +194,67 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 		"volumeID": volume.ID,
 	}).Info("Backup volume was created")
 	return volume.ID, nil
+}
+
+func (b *BlockStore) createVolumeFromClone(cloneID, volumeType, volumeAZ string) (string, error) {
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"cloneID":       cloneID,
+		"volumeType":    volumeType,
+		"volumeAZ":      volumeAZ,
+		"cloneTimeout":  b.cloneTimeout,
+		"volumeTimeout": b.volumeTimeout,
+		"method":        b.config["method"],
+	})
+	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
+
+	volumeName := fmt.Sprintf("%s.backup.%s", cloneID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	volumeDesc := "Velero backup from volume clone"
+	volume, err := b.cloneVolume(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
+	if err != nil {
+		return "", err
+	}
+
+	logWithFields.WithFields(logrus.Fields{
+		"volumeID": volume.ID,
+	}).Info("Backup volume was created")
+	return volume.ID, nil
+}
+
+func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeName, volumeDesc, volumeAZ string, tags map[string]string) (*volumes.Volume, error) {
+	// Make sure source volume clone is in ready state
+	logWithFields.Info("Waiting for source volume clone to be in 'available' state")
+
+	originVolume, err := b.waitForVolumeStatus(volumeID, volumeStatuses, b.volumeTimeout)
+	if err != nil {
+		logWithFields.Error("source volume clone didn't get into 'available' state within the time limit")
+		return nil, fmt.Errorf("source volume clone %v didn't get into 'available' state within the time limit: %w", volumeID, err)
+	}
+	logWithFields.Info("Source volume is in 'available' state")
+
+	// Create Cinder Volume from volume (backup)
+	logWithFields.Info("Starting to create volume from clone")
+	opts := volumes.CreateOpts{
+		Name:             volumeName,
+		Description:      volumeDesc,
+		VolumeType:       originVolume.VolumeType,
+		AvailabilityZone: volumeAZ,
+		SourceVolID:      volumeID,
+		Metadata:         utils.Merge(originVolume.Metadata, tags),
+	}
+
+	volume, err := volumes.Create(b.client, opts).Extract()
+	if err != nil {
+		logWithFields.Error("failed to create volume from volume clone")
+		return nil, fmt.Errorf("failed to create volume %v from volume clone %v: %w", volumeName, volumeID, err)
+	}
+
+	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
+	if err != nil {
+		logWithFields.Error("volume didn't get into 'available' state within the time limit")
+		return nil, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+	}
+
+	return volume, nil
 }
 
 // GetVolumeInfo returns type of the specified volume in the given availability zone.
@@ -213,6 +301,15 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 // CreateSnapshot creates a snapshot of the specified volume, and applies any provided
 // set of tags to the snapshot.
 func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
+	switch b.config["method"] {
+	case "clone":
+		return b.createClone(volumeID, volumeAZ, tags)
+	}
+
+	return b.createSnapshot(volumeID, volumeAZ, tags)
+}
+
+func (b *BlockStore) createSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"snapshotName":    snapshotName,
@@ -220,6 +317,8 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 		"volumeAZ":        volumeAZ,
 		"tags":            tags,
 		"snapshotTimeout": b.snapshotTimeout,
+		"volumeTimeout":   b.volumeTimeout,
+		"method":          b.config["method"],
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
@@ -236,7 +335,6 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 		VolumeID:    volumeID,
 		Force:       true,
 	}
-
 	snapshot, err := snapshots.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create snapshot from volume")
@@ -256,10 +354,44 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 	return snapshot.ID, nil
 }
 
+func (b *BlockStore) createClone(volumeID, volumeAZ string, tags map[string]string) (string, error) {
+	cloneName := fmt.Sprintf("%s.clone.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"cloneName":    cloneName,
+		"volumeID":     volumeID,
+		"volumeAZ":     volumeAZ,
+		"tags":         tags,
+		"cloneTimeout": b.cloneTimeout,
+		"method":       b.config["method"],
+	})
+	logWithFields.Info("BlockStore.CreateSnapshot called")
+
+	cloneDesc := "Velero volume clone"
+	clone, err := b.cloneVolume(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
+	if err != nil {
+		return "", err
+	}
+
+	logWithFields.WithFields(logrus.Fields{
+		"cloneID": clone.ID,
+	}).Info("Volume clone finished successfuly")
+	return clone.ID, nil
+}
+
 // DeleteSnapshot deletes the specified volume snapshot.
 func (b *BlockStore) DeleteSnapshot(snapshotID string) error {
+	switch b.config["method"] {
+	case "clone":
+		return b.deleteClone(snapshotID)
+	}
+
+	return b.deleteSnapshot(snapshotID)
+}
+
+func (b *BlockStore) deleteSnapshot(snapshotID string) error {
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"snapshotID": snapshotID,
+		"method":     b.config["method"],
 	})
 	logWithFields.Info("BlockStore.DeleteSnapshot called")
 
@@ -272,6 +404,27 @@ func (b *BlockStore) DeleteSnapshot(snapshotID string) error {
 		}
 		logWithFields.Error("failed to delete snapshot")
 		return fmt.Errorf("failed to delete snapshot %v: %w", snapshotID, err)
+	}
+
+	return nil
+}
+
+func (b *BlockStore) deleteClone(cloneID string) error {
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"cloneID": cloneID,
+		"method":  b.config["method"],
+	})
+	logWithFields.Info("BlockStore.DeleteSnapshot called")
+
+	// Delete volume clone from Cinder
+	err := volumes.Delete(b.client, cloneID, nil).ExtractErr()
+	if err != nil {
+		if _, ok := err.(gophercloud.ErrDefault404); ok {
+			logWithFields.Info("volume clone is already deleted")
+			return nil
+		}
+		logWithFields.Error("failed to delete volume clone")
+		return fmt.Errorf("failed to delete volume clone %v: %w", cloneID, err)
 	}
 
 	return nil
