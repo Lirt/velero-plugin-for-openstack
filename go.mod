@@ -6,6 +6,7 @@ require (
 	github.com/gophercloud/gophercloud v1.3.1-0.20230331133731-6e0b5eac8554
 	github.com/gophercloud/utils v0.0.0-20220927104426-4113af8d2663
 	github.com/sirupsen/logrus v1.9.0
+	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
 	github.com/vmware-tanzu/velero v1.11.0
 	k8s.io/api v0.25.6
@@ -44,7 +45,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/cobra v1.4.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220608161450-d0670ef3b1eb // indirect
 	golang.org/x/sys v0.5.0 // indirect

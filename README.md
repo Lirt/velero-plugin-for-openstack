@@ -284,12 +284,18 @@ configuration:
       # * "snapshot" is a default cinder snapshot method
       # * "clone" is for a full volume clone instead of a snapshot allowing the
       # source volume to be deleted
+      # * "backup" is for a full volume backup uploaded to a Cinder backup
+      # allowing the source volume to be deleted (EXPERIMENTAL)
+      # * "image" is for a full volume backup uploaded to a Glance image
+      # allowing the source volume to be deleted (EXPERIMENTAL)
       method: clone
       # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
       # (default: 5m)
       volumeTimeout: 5m
       snapshotTimeout: 5m
       cloneTimeout: 5m
+      backupTimeout: 5m
+      imageTimeout: 5m
   # for Manila shared filesystem storage
   - name: manila
     provider: community.openstack.org/openstack-manila

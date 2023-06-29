@@ -8,8 +8,12 @@ import (
 	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/apiversions"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/backups"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumeactions"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/snapshots"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
 	"github.com/sirupsen/logrus"
 	velerovolumesnapshotter "github.com/vmware-tanzu/velero/pkg/plugin/velero/volumesnapshotter/v1"
 	v1 "k8s.io/api/core/v1"
@@ -18,7 +22,9 @@ import (
 )
 
 const (
-	defaultTimeout = "5m"
+	defaultTimeout           = "5m"
+	volumeBackupMicroversion = "3.47"
+	volumeImageMicroversion  = "3.1"
 )
 
 var (
@@ -26,6 +32,8 @@ var (
 	supportedMethods = []string{
 		"snapshot",
 		"clone",
+		"backup",
+		"image",
 	}
 	// a list of supported Cinder CSI drivers
 	supportedDrivers = []string{
@@ -45,16 +53,44 @@ var (
 	snapshotStatuses = []string{
 		"available",
 	}
+	// active backup statuses
+	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/ext-backups.inc#backups-backups
+	backupStatuses = []string{
+		"available",
+	}
+	// active image statuses
+	//   https://github.com/openstack/glance/blob/master/api-ref/source/v2/images-images-v2.inc#images
+	imageStatuses = []string{
+		"active",
+	}
+	// a list of volume attributes to skip for image upload
+	skipVolumeAttributes = []string{
+		"direct_url",
+		"boot_roles",
+		"os_hash_algo",
+		"os_hash_value",
+		"checksum",
+		"size",
+		"container_format",
+		"disk_format",
+		"image_id",
+		// these integer values have to be set separately
+		"min_disk",
+		"min_ram",
+	}
 )
 
 // BlockStore is a plugin for containing state for the Cinder Block Storage
 type BlockStore struct {
 	client          *gophercloud.ServiceClient
+	imgClient       *gophercloud.ServiceClient
 	provider        *gophercloud.ProviderClient
 	config          map[string]string
 	volumeTimeout   int
 	snapshotTimeout int
 	cloneTimeout    int
+	backupTimeout   int
+	imageTimeout    int
 	log             logrus.FieldLogger
 }
 
@@ -94,6 +130,14 @@ func (b *BlockStore) Init(config map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("cannot parse time from cloneTimeout config variable: %w", err)
 	}
+	b.backupTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "backupTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from backupTimeout config variable: %w", err)
+	}
+	b.imageTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "imageTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from imageTimeout config variable: %w", err)
+	}
 
 	// Authenticate to OpenStack
 	err = utils.Authenticate(&b.provider, "cinder", config, b.log)
@@ -117,10 +161,38 @@ func (b *BlockStore) Init(config map[string]string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create cinder storage client: %w", err)
 		}
-		b.log.WithFields(logrus.Fields{
+
+		logWithFields := b.log.WithFields(logrus.Fields{
 			"endpoint": b.client.Endpoint,
 			"region":   region,
-		}).Info("Successfully created block storage service client")
+		})
+
+		// set minimum supported Cinder microversion for backups or images
+		switch b.config["method"] {
+		case "backup":
+			err = b.setCinderMicroversion(volumeBackupMicroversion)
+			if err != nil {
+				return err
+			}
+			logWithFields.Infof("Setting the supported %v microversion", b.client.Microversion)
+		case "image":
+			err = b.setCinderMicroversion(volumeImageMicroversion)
+			if err != nil {
+				return err
+			}
+			logWithFields.Infof("Setting the supported %v microversion", b.client.Microversion)
+
+			b.imgClient, err = openstack.NewImageServiceV2(b.provider, gophercloud.EndpointOpts{
+				Region: region,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create glance image client: %w", err)
+			}
+
+			logWithFields.Info("Successfully created image service client")
+		}
+
+		logWithFields.Info("Successfully created block storage service client")
 	}
 
 	return nil
@@ -133,6 +205,10 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	switch b.config["method"] {
 	case "clone":
 		return b.createVolumeFromClone(snapshotID, volumeType, volumeAZ)
+	case "backup":
+		return b.createVolumeFromBackup(snapshotID, volumeType, volumeAZ)
+	case "image":
+		return b.createVolumeFromImage(snapshotID, volumeType, volumeAZ)
 	}
 
 	return b.createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ)
@@ -212,6 +288,110 @@ func (b *BlockStore) createVolumeFromClone(cloneID, volumeType, volumeAZ string)
 	volume, err := b.cloneVolume(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
 	if err != nil {
 		return "", err
+	}
+
+	logWithFields.WithFields(logrus.Fields{
+		"volumeID": volume.ID,
+	}).Info("Backup volume was created")
+	return volume.ID, nil
+}
+
+func (b *BlockStore) createVolumeFromBackup(backupID, volumeType, volumeAZ string) (string, error) {
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"backupID":      backupID,
+		"volumeType":    volumeType,
+		"volumeAZ":      volumeAZ,
+		"backupTimeout": b.backupTimeout,
+		"volumeTimeout": b.volumeTimeout,
+		"method":        b.config["method"],
+	})
+	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
+
+	volumeName := fmt.Sprintf("%s.backup.%s", backupID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	// Make sure backup is in ready state
+	logWithFields.Info("Waiting for backup to be in 'available' state")
+
+	backup, err := b.waitForBackupStatus(backupID, backupStatuses, b.backupTimeout)
+	if err != nil {
+		logWithFields.Error("backup didn't get into 'available' state within the time limit")
+		return "", fmt.Errorf("backup %v didn't get into 'available' state within the time limit: %w", backupID, err)
+	}
+	logWithFields.Info("Backup is in 'available' state")
+
+	// Create Cinder Volume from backup (backup)
+	logWithFields.Info("Starting to create volume from backup")
+	opts := volumes.CreateOpts{
+		Description:      "Velero backup from backup",
+		Name:             volumeName,
+		VolumeType:       volumeType,
+		AvailabilityZone: volumeAZ,
+		BackupID:         backupID,
+	}
+	if backup.Metadata != nil {
+		opts.Metadata = *backup.Metadata
+	}
+
+	volume, err := volumes.Create(b.client, opts).Extract()
+	if err != nil {
+		logWithFields.Error("failed to create volume from backup")
+		return "", fmt.Errorf("failed to create volume %v from backup %v: %w", volumeName, backupID, err)
+	}
+
+	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
+	if err != nil {
+		logWithFields.Error("volume didn't get into 'available' state within the time limit")
+		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+	}
+
+	logWithFields.WithFields(logrus.Fields{
+		"volumeID": volume.ID,
+	}).Info("Backup volume was created")
+	return volume.ID, nil
+}
+
+func (b *BlockStore) createVolumeFromImage(imageID, volumeType, volumeAZ string) (string, error) {
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"imageID":       imageID,
+		"volumeType":    volumeType,
+		"volumeAZ":      volumeAZ,
+		"imageTimeout":  b.imageTimeout,
+		"volumeTimeout": b.volumeTimeout,
+		"method":        b.config["method"],
+	})
+	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
+
+	volumeName := fmt.Sprintf("%s.image.%s", imageID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	// Make sure image is in ready state
+	logWithFields.Info("Waiting for image to be in 'available' state")
+
+	_, err := b.waitForImageStatus(imageID, imageStatuses, b.imageTimeout)
+	if err != nil {
+		logWithFields.Error("image didn't get into 'active' state within the time limit")
+		return "", fmt.Errorf("image %v didn't get into 'active' state within the time limit: %w", imageID, err)
+	}
+	logWithFields.Info("Image is in 'active' state")
+
+	// Create Cinder Volume from image (image)
+	logWithFields.Info("Starting to create volume from image")
+	opts := volumes.CreateOpts{
+		Description:      "Velero backup from image",
+		Name:             volumeName,
+		VolumeType:       volumeType,
+		AvailabilityZone: volumeAZ,
+		ImageID:          imageID,
+		// TODO: add Metadata support
+	}
+
+	volume, err := volumes.Create(b.client, opts).Extract()
+	if err != nil {
+		logWithFields.Error("failed to create volume from image")
+		return "", fmt.Errorf("failed to create volume %v from image %v: %w", volumeName, imageID, err)
+	}
+
+	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
+	if err != nil {
+		logWithFields.Error("volume didn't get into 'available' state within the time limit")
+		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -304,6 +484,10 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 	switch b.config["method"] {
 	case "clone":
 		return b.createClone(volumeID, volumeAZ, tags)
+	case "backup":
+		return b.createBackup(volumeID, volumeAZ, tags)
+	case "image":
+		return b.createImage(volumeID, volumeAZ, tags)
 	}
 
 	return b.createSnapshot(volumeID, volumeAZ, tags)
@@ -378,11 +562,112 @@ func (b *BlockStore) createClone(volumeID, volumeAZ string, tags map[string]stri
 	return clone.ID, nil
 }
 
+func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]string) (string, error) {
+	backupName := fmt.Sprintf("%s.backup.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"backupName":    backupName,
+		"volumeID":      volumeID,
+		"volumeAZ":      volumeAZ,
+		"tags":          tags,
+		"backupTimeout": b.backupTimeout,
+		"method":        b.config["method"],
+	})
+	logWithFields.Info("BlockStore.CreateSnapshot called")
+
+	originVolume, err := volumes.Get(b.client, volumeID).Extract()
+	if err != nil {
+		logWithFields.Error("failed to get volume from cinder")
+		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
+	}
+
+	opts := &backups.CreateOpts{
+		VolumeID:    volumeID,
+		Description: "Velero volume backup",
+		Container:   backupName,
+		Metadata:    utils.Merge(originVolume.Metadata, tags),
+		Force:       true,
+	}
+	backup, err := backups.Create(b.client, opts).Extract()
+	if err != nil {
+		logWithFields.Error("failed to create backup from volume")
+		return "", fmt.Errorf("failed to create backup %v from volume %v: %w", backupName, volumeID, err)
+	}
+
+	_, err = b.waitForBackupStatus(backup.ID, backupStatuses, b.backupTimeout)
+	if err != nil {
+		logWithFields.Error("backup didn't get into 'available' state within the time limit")
+		return "", fmt.Errorf("backup %v didn't get into 'available' state within the time limit: %w", backup.ID, err)
+	}
+	logWithFields.Info("Volume backup is in 'available' state")
+
+	logWithFields.WithFields(logrus.Fields{
+		"backupID": backup.ID,
+	}).Info("Volume backup finished successfuly")
+	return backup.ID, nil
+}
+
+func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]string) (string, error) {
+	imageName := fmt.Sprintf("%s.image.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"imageName":    imageName,
+		"volumeID":     volumeID,
+		"volumeAZ":     volumeAZ,
+		"tags":         tags,
+		"imageTimeout": b.imageTimeout,
+		"method":       b.config["method"],
+	})
+	logWithFields.Info("BlockStore.CreateSnapshot called")
+
+	originVolume, err := volumes.Get(b.client, volumeID).Extract()
+	if err != nil {
+		logWithFields.Error("failed to get volume from cinder")
+		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
+	}
+
+	opts := &volumeactions.UploadImageOpts{
+		ImageName: imageName,
+		// Description: "Velero volume image",
+		ContainerFormat: originVolume.VolumeImageMetadata["container_format"],
+		DiskFormat:      originVolume.VolumeImageMetadata["disk_format"],
+		Visibility:      string(images.ImageVisibilityPrivate),
+		Force:           true,
+		// TODO: add Metadata support
+	}
+	image, err := volumeactions.UploadImage(b.client, volumeID, opts).Extract()
+	if err != nil {
+		logWithFields.Error("failed to create image from volume")
+		return "", fmt.Errorf("failed to create image %v from volume %v: %w", imageName, volumeID, err)
+	}
+
+	_, err = b.waitForImageStatus(image.ImageID, imageStatuses, b.imageTimeout)
+	if err != nil {
+		logWithFields.Error("image didn't get into 'active' state within the time limit")
+		return "", fmt.Errorf("image %v didn't get into 'active' state within the time limit: %w", image.ImageID, err)
+	}
+	logWithFields.Info("Volume image is in 'active' state")
+
+	updateProperties := expandVolumeProperties(logWithFields, originVolume)
+	_, err = images.Update(b.imgClient, image.ImageID, updateProperties).Extract()
+	if err != nil {
+		logWithFields.Error("failed to update image properties")
+		return "", fmt.Errorf("failed to update image properties: %w", err)
+	}
+
+	logWithFields.WithFields(logrus.Fields{
+		"imageID": image.ImageID,
+	}).Info("Volume image finished successfuly")
+	return image.ImageID, nil
+}
+
 // DeleteSnapshot deletes the specified volume snapshot.
 func (b *BlockStore) DeleteSnapshot(snapshotID string) error {
 	switch b.config["method"] {
 	case "clone":
 		return b.deleteClone(snapshotID)
+	case "backup":
+		return b.deleteBackup(snapshotID)
+	case "image":
+		return b.deleteImage(snapshotID)
 	}
 
 	return b.deleteSnapshot(snapshotID)
@@ -425,6 +710,48 @@ func (b *BlockStore) deleteClone(cloneID string) error {
 		}
 		logWithFields.Error("failed to delete volume clone")
 		return fmt.Errorf("failed to delete volume clone %v: %w", cloneID, err)
+	}
+
+	return nil
+}
+
+func (b *BlockStore) deleteBackup(backupID string) error {
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"backupID": backupID,
+		"method":   b.config["method"],
+	})
+	logWithFields.Info("BlockStore.DeleteSnapshot called")
+
+	// Delete volume backup from Cinder
+	err := backups.Delete(b.client, backupID).ExtractErr()
+	if err != nil {
+		if _, ok := err.(gophercloud.ErrDefault404); ok {
+			logWithFields.Info("volume backup is already deleted")
+			return nil
+		}
+		logWithFields.Error("failed to delete volume backup")
+		return fmt.Errorf("failed to delete volume backup %v: %w", backupID, err)
+	}
+
+	return nil
+}
+
+func (b *BlockStore) deleteImage(imageID string) error {
+	logWithFields := b.log.WithFields(logrus.Fields{
+		"imageID": imageID,
+		"method":  b.config["method"],
+	})
+	logWithFields.Info("BlockStore.DeleteSnapshot called")
+
+	// Delete volume image from Glance
+	err := images.Delete(b.imgClient, imageID).ExtractErr()
+	if err != nil {
+		if _, ok := err.(gophercloud.ErrDefault404); ok {
+			logWithFields.Info("volume image is already deleted")
+			return nil
+		}
+		logWithFields.Error("failed to delete volume image")
+		return fmt.Errorf("failed to delete volume image %v: %w", imageID, err)
 	}
 
 	return nil
@@ -488,6 +815,36 @@ func (b *BlockStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID s
 	return &unstructured.Unstructured{Object: res}, nil
 }
 
+func (b *BlockStore) getCinderMicroversion() (string, error) {
+	allVersions, err := apiversions.List(b.client).AllPages()
+	if err != nil {
+		return "", err
+	}
+	api, err := apiversions.ExtractAPIVersion(allVersions, "v3.0")
+	if err != nil {
+		return "", err
+	}
+	return api.Version, nil
+}
+
+func (b *BlockStore) setCinderMicroversion(version string) error {
+	mv, err := b.getCinderMicroversion()
+	if err != nil {
+		return fmt.Errorf("failed to obtain supported Cinder microversions: %v", err)
+	}
+	ok, err := utils.CompareMicroversions("lte", version, mv)
+	if err != nil {
+		return fmt.Errorf("failed to compare supported Cinder microversions: %v", err)
+	}
+	if !ok {
+		return fmt.Errorf("the %v Cinder microversion doesn't support %ss", mv, b.config["method"])
+	}
+
+	b.client.Microversion = version
+
+	return nil
+}
+
 func (b *BlockStore) waitForVolumeStatus(id string, statuses []string, secs int) (current *volumes.Volume, err error) {
 	return current, gophercloud.WaitFor(secs, func() (bool, error) {
 		current, err = volumes.Get(b.client, id).Extract()
@@ -516,4 +873,59 @@ func (b *BlockStore) waitForSnapshotStatus(id string, statuses []string, secs in
 
 		return false, nil
 	})
+}
+
+func (b *BlockStore) waitForBackupStatus(id string, statuses []string, secs int) (current *backups.Backup, err error) {
+	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+		current, err = backups.Get(b.client, id).Extract()
+		if err != nil {
+			return false, err
+		}
+
+		if utils.SliceContains(statuses, current.Status) {
+			return true, nil
+		}
+
+		return false, nil
+	})
+}
+
+func (b *BlockStore) waitForImageStatus(id string, statuses []string, secs int) (current *images.Image, err error) {
+	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+		current, err = images.Get(b.imgClient, id).Extract()
+		if err != nil {
+			return false, err
+		}
+
+		if utils.SliceContains(statuses, string(current.Status)) {
+			return true, nil
+		}
+
+		return false, nil
+	})
+}
+
+func expandVolumeProperties(log logrus.FieldLogger, volume *volumes.Volume) images.UpdateOpts {
+	// set min_disk and min_ram from a source volume
+	imgAttrUpdateOpts := images.UpdateOpts{
+		images.ReplaceImageMinDisk{NewMinDisk: volume.Size},
+	}
+	if s, ok := volume.VolumeImageMetadata["min_ram"]; ok {
+		if minRam, err := strconv.Atoi(s); err == nil {
+			imgAttrUpdateOpts = append(imgAttrUpdateOpts, images.ReplaceImageMinRam{NewMinRam: minRam})
+		} else {
+			log.Warningf("Cannot convert %q to integer: %s", s, err)
+		}
+	}
+	for key, value := range volume.VolumeImageMetadata {
+		if utils.SliceContains(skipVolumeAttributes, key) || value == "" {
+			continue
+		}
+		imgAttrUpdateOpts = append(imgAttrUpdateOpts, images.UpdateImageProperty{
+			Op:    images.AddOp,
+			Name:  key,
+			Value: value,
+		})
+	}
+	return imgAttrUpdateOpts
 }
