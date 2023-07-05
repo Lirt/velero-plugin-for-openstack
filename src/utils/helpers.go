@@ -1,9 +1,14 @@
 package utils
 
 import (
+	"math/rand"
 	"os"
 	"strings"
+	"time"
 )
+
+// Rand is used for a random generator exclusively for this go module
+var Rand = rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
 
 // GetEnv gets value from environment variable or fallbacks to default value
 // This snippet is from https://stackoverflow.com/a/40326580/3323419

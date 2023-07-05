@@ -2,6 +2,7 @@ package utils
 
 import (
 	"testing"
+	"time"
 )
 
 func TestReplaceAccount(t *testing.T) {
@@ -39,5 +40,25 @@ func TestReplaceAccount(t *testing.T) {
 		if path != tt.expected {
 			t.Errorf("[%s] failed - output %s doesn't match expected '%s'", tt.name, path, tt.expected)
 		}
+	}
+}
+
+func TestRand(t *testing.T) {
+	Rand.Seed(time.Now().UTC().UnixNano())
+	a := Rand.Uint64()
+	Rand.Seed(time.Now().UTC().UnixNano())
+	b := Rand.Uint64()
+
+	if a == b {
+		t.Errorf("failed to verify random seed generator %v == %v", a, b)
+	}
+
+	Rand.Seed(int64(time.Now().UTC().Second()))
+	a = Rand.Uint64()
+	Rand.Seed(int64(time.Now().UTC().Second()))
+	b = Rand.Uint64()
+
+	if a != b {
+		t.Errorf("failed to verify random seed generator %v != %v", a, b)
 	}
 }

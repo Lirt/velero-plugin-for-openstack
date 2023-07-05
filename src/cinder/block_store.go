@@ -2,7 +2,6 @@ package cinder
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
 
@@ -86,7 +85,7 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	})
 	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
 
-	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(rand.Uint64(), 10))
+	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	// Make sure snapshot is in ready state
 	// Possible values for snapshot state:
 	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-snapshots.inc#volume-snapshots-snapshots
@@ -168,7 +167,7 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 // CreateSnapshot creates a snapshot of the specified volume, and applies any provided
 // set of tags to the snapshot.
 func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
-	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(rand.Uint64(), 10))
+	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"snapshotName": snapshotName,
 		"volumeID":     volumeID,
