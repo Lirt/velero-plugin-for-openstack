@@ -225,13 +225,18 @@ func (o *ObjectStore) ListObjects(container, prefix string) ([]string, error) {
 
 // DeleteObject deletes object specified by object from container
 func (o *ObjectStore) DeleteObject(container, object string) error {
-	o.log.WithFields(logrus.Fields{
+	logWithFields := o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
-	}).Info("ObjectStore.DeleteObject called")
+	})
+	logWithFields.Info("ObjectStore.DeleteObject called")
 
 	_, err := objects.Delete(o.client, container, object, nil).Extract()
 	if err != nil {
+		if _, ok := err.(gophercloud.ErrDefault404); ok {
+			logWithFields.Info("object is already deleted")
+			return nil
+		}
 		return fmt.Errorf("failed to delete %q object from %q container: %w", object, container, err)
 	}
 

@@ -1,19 +1,34 @@
 package utils
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// Rand is used for a random generator exclusively for this go module
-var Rand = rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
+var (
+	// Rand is used for a random generator exclusively for this go module
+	Rand = rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
+	// regexp to parse OpenStack service microversion
+	mvRe = regexp.MustCompile(`^(\d+).(\d+)$`)
+)
 
 // GetEnv gets value from environment variable or fallbacks to default value
 // This snippet is from https://stackoverflow.com/a/40326580/3323419
 func GetEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
+// GetConf gets a value from a config map or fallbacks to default value
+func GetConf(config map[string]string, key, fallback string) string {
+	if value, ok := config[key]; ok && value != "" {
 		return value
 	}
 	return fallback
@@ -31,4 +46,53 @@ func ReplaceAccount(account, path string, prefixes []string) string {
 		}
 	}
 	return strings.Join(parts, "/")
+}
+
+// CompareMicroversions compares two microversions using operators:
+// lte: less than or equal
+// gte: greater than or equal
+func CompareMicroversions(operator, want, have string) (bool, error) {
+	if operator != "lte" && operator != "gte" {
+		return false, fmt.Errorf("invalid microversions comparison %q operator, must be lte or gte", operator)
+	}
+
+	w, err := microversionToInt(want)
+	if err != nil {
+		return false, err
+	}
+
+	h, err := microversionToInt(have)
+	if err != nil {
+		return false, err
+	}
+
+	// lte
+	if operator == "lte" {
+		if w[0] < h[0] {
+			return true, nil
+		}
+
+		return w[0] <= h[0] && w[1] <= h[1], nil
+	}
+
+	// gte
+	if w[0] > h[0] {
+		return true, nil
+	}
+
+	return w[0] >= h[0] && w[1] >= h[1], nil
+}
+
+func microversionToInt(mv string) ([]int, error) {
+	res := mvRe.FindAllStringSubmatch(mv, -1)
+	if len(res) == 1 && len(res[0]) == 3 {
+		ver := res[0][1:]
+		major, _ := strconv.Atoi(ver[0])
+		minor, _ := strconv.Atoi(ver[1])
+		return []int{
+			major,
+			minor,
+		}, nil
+	}
+	return nil, fmt.Errorf("invalid microversion string: %v", mv)
 }

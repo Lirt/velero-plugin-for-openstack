@@ -10,6 +10,8 @@ configuration:
   volumeSnapshotLocation:
   - provider: community.openstack.org/openstack
     name: cinder
+  - provider: community.openstack.org/openstack-manila
+    name: manila
 initContainers:
 - name: velero-plugin-openstack
   image: ""
