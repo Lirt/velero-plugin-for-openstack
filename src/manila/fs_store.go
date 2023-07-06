@@ -23,8 +23,7 @@ const (
 	defaultCsiManilaDriverName = "nfs.manila.csi.openstack.org"
 	minSupportedMicroversion   = "2.7"
 	getAccessRulesMicroversion = "2.45"
-	shareReadyTimeout          = 300
-	snapshotReadyTimeout       = 300
+	defaultTimeout             = "5m"
 )
 
 var (
@@ -42,10 +41,12 @@ var (
 
 // FSStore is a plugin for containing state for the Manila Shared Filesystem
 type FSStore struct {
-	client   *gophercloud.ServiceClient
-	provider *gophercloud.ProviderClient
-	config   map[string]string
-	log      logrus.FieldLogger
+	client          *gophercloud.ServiceClient
+	provider        *gophercloud.ProviderClient
+	config          map[string]string
+	shareTimeout    int
+	snapshotTimeout int
+	log             logrus.FieldLogger
 }
 
 // NewFSStore instantiates a Manila Shared Filesystem Snapshotter.
@@ -67,8 +68,19 @@ func (b *FSStore) Init(config map[string]string) error {
 	// set default Manila CSI driver name
 	b.config["driver"] = utils.GetConf(b.config, "driver", defaultCsiManilaDriverName)
 
+	// parse timeouts
+	var err error
+	b.shareTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "shareTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from shareTimeout config variable: %w", err)
+	}
+	b.snapshotTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "snapshotTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from snapshotTimeout config variable: %w", err)
+	}
+
 	// Authenticate to Openstack
-	err := utils.Authenticate(&b.provider, "manila", config, b.log)
+	err = utils.Authenticate(&b.provider, "manila", config, b.log)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate against OpenStack in shared filesystem plugin: %w", err)
 	}
@@ -122,18 +134,18 @@ func (b *FSStore) Init(config map[string]string) error {
 // IOPS is ignored as it is not used in Manila.
 func (b *FSStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
 	logWithFields := b.log.WithFields(logrus.Fields{
-		"snapshotID":           snapshotID,
-		"volumeType":           volumeType,
-		"volumeAZ":             volumeAZ,
-		"shareReadyTimeout":    shareReadyTimeout,
-		"snapshotReadyTimeout": snapshotReadyTimeout,
+		"snapshotID":      snapshotID,
+		"volumeType":      volumeType,
+		"volumeAZ":        volumeAZ,
+		"shareTimeout":    b.shareTimeout,
+		"snapshotTimeout": b.snapshotTimeout,
 	})
 	logWithFields.Info("FSStore.CreateVolumeFromSnapshot called")
 
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields.Info("Waiting for snapshot to be in 'available' status")
 
-	snapshot, err := b.waitForSnapshotStatus(snapshotID, snapshotStatuses, snapshotReadyTimeout)
+	snapshot, err := b.waitForSnapshotStatus(snapshotID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' status within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' status within the time limit: %w", snapshotID, err)
@@ -172,7 +184,7 @@ func (b *FSStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 
 	logWithFields.Info("Waiting for share to be in 'available' status")
 
-	_, err = b.waitForShareStatus(share.ID, shareStatuses, shareReadyTimeout)
+	_, err = b.waitForShareStatus(share.ID, shareStatuses, b.shareTimeout)
 	if err != nil {
 		logWithFields.Error("share didn't get into 'available' status within the time limit")
 		return "", fmt.Errorf("share %v didn't get into 'available' status within the time limit: %w", share.ID, err)
@@ -243,11 +255,11 @@ func (b *FSStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err erro
 func (b *FSStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields := b.log.WithFields(logrus.Fields{
-		"snapshotName":         snapshotName,
-		"volumeID":             volumeID,
-		"volumeAZ":             volumeAZ,
-		"tags":                 tags,
-		"snapshotReadyTimeout": snapshotReadyTimeout,
+		"snapshotName":    snapshotName,
+		"volumeID":        volumeID,
+		"volumeAZ":        volumeAZ,
+		"tags":            tags,
+		"snapshotTimeout": b.snapshotTimeout,
 	})
 	logWithFields.Info("FSStore.CreateSnapshot called")
 
@@ -263,7 +275,7 @@ func (b *FSStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]stri
 		return "", fmt.Errorf("failed to create snapshot %v from share %v: %w", snapshotName, volumeID, err)
 	}
 
-	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, snapshotReadyTimeout)
+	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' status within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' status within the time limit: %w", snapshot.ID, err)

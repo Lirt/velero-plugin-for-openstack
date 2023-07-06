@@ -18,8 +18,7 @@ import (
 )
 
 const (
-	volumeReadyTimeout   = 300
-	snapshotReadyTimeout = 300
+	defaultTimeout = "5m"
 )
 
 var (
@@ -45,10 +44,12 @@ var (
 
 // BlockStore is a plugin for containing state for the Cinder Block Storage
 type BlockStore struct {
-	client   *gophercloud.ServiceClient
-	provider *gophercloud.ProviderClient
-	config   map[string]string
-	log      logrus.FieldLogger
+	client          *gophercloud.ServiceClient
+	provider        *gophercloud.ProviderClient
+	config          map[string]string
+	volumeTimeout   int
+	snapshotTimeout int
+	log             logrus.FieldLogger
 }
 
 // NewBlockStore instantiates a Cinder Volume Snapshotter.
@@ -67,8 +68,19 @@ func (b *BlockStore) Init(config map[string]string) error {
 	}).Info("BlockStore.Init called")
 	b.config = config
 
+	// parse timeouts
+	var err error
+	b.volumeTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "volumeTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from volumeTimeout config variable: %w", err)
+	}
+	b.snapshotTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "snapshotTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from snapshotTimeout config variable: %w", err)
+	}
+
 	// Authenticate to OpenStack
-	err := utils.Authenticate(&b.provider, "cinder", config, b.log)
+	err = utils.Authenticate(&b.provider, "cinder", config, b.log)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate against OpenStack in block storage plugin: %w", err)
 	}
@@ -103,17 +115,18 @@ func (b *BlockStore) Init(config map[string]string) error {
 // IOPS is ignored as it is not used in Cinder.
 func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ string, iops *int64) (string, error) {
 	logWithFields := b.log.WithFields(logrus.Fields{
-		"snapshotID":           snapshotID,
-		"volumeType":           volumeType,
-		"volumeAZ":             volumeAZ,
-		"snapshotReadyTimeout": snapshotReadyTimeout,
+		"snapshotID":      snapshotID,
+		"volumeType":      volumeType,
+		"volumeAZ":        volumeAZ,
+		"snapshotTimeout": b.snapshotTimeout,
+		"volumeTimeout":   b.volumeTimeout,
 	})
 	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
 
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields.Info("Waiting for snapshot to be in 'available' state")
 
-	snapshot, err := b.waitForSnapshotStatus(snapshotID, snapshotStatuses, snapshotReadyTimeout)
+	snapshot, err := b.waitForSnapshotStatus(snapshotID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshotID, err)
@@ -144,7 +157,7 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 		return "", fmt.Errorf("failed to create volume %v from snapshot %v: %w", volumeName, snapshotID, err)
 	}
 
-	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, volumeReadyTimeout)
+	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
 		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
@@ -202,11 +215,11 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	snapshotName := fmt.Sprintf("%s.snap.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields := b.log.WithFields(logrus.Fields{
-		"snapshotName":         snapshotName,
-		"volumeID":             volumeID,
-		"volumeAZ":             volumeAZ,
-		"tags":                 tags,
-		"snapshotReadyTimeout": snapshotReadyTimeout,
+		"snapshotName":    snapshotName,
+		"volumeID":        volumeID,
+		"volumeAZ":        volumeAZ,
+		"tags":            tags,
+		"snapshotTimeout": b.snapshotTimeout,
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
@@ -230,7 +243,7 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 		return "", fmt.Errorf("failed to create snapshot %v from volume %v: %w", snapshotName, volumeID, err)
 	}
 
-	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, snapshotReadyTimeout)
+	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshot.ID, err)
