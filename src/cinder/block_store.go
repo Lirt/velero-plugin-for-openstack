@@ -18,7 +18,29 @@ import (
 )
 
 const (
+	volumeReadyTimeout   = 300
 	snapshotReadyTimeout = 300
+)
+
+var (
+	// a list of supported Cinder CSI drivers
+	supportedDrivers = []string{
+		// standard Cinder CSI driver
+		"cinder.csi.openstack.org",
+		// Huawei Cloud Cinder CSI driver
+		"disk.csi.everest.io",
+	}
+	// active volume statuses
+	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-volumes.inc#volumes-volumes
+	volumeStatuses = []string{
+		"available",
+		"in-use",
+	}
+	// active snapshot statuses
+	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-snapshots.inc#volume-snapshots-snapshots
+	snapshotStatuses = []string{
+		"available",
+	}
 )
 
 // BlockStore is a plugin for containing state for the Cinder Block Storage
@@ -89,17 +111,21 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
 
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
-	// Make sure snapshot is in ready state
-	// Possible values for snapshot state:
-	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-snapshots.inc#volume-snapshots-snapshots
 	logWithFields.Info("Waiting for snapshot to be in 'available' state")
 
-	err := snapshots.WaitForStatus(b.client, snapshotID, "available", snapshotReadyTimeout)
+	snapshot, err := b.waitForSnapshotStatus(snapshotID, snapshotStatuses, snapshotReadyTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshotID, err)
 	}
 	logWithFields.Info("Snapshot is in 'available' state")
+
+	// get original volume with its metadata
+	originVolume, err := volumes.Get(b.client, snapshot.VolumeID).Extract()
+	if err != nil {
+		logWithFields.Error("failed to get volume from cinder")
+		return "", fmt.Errorf("failed to get volume %v from cinder: %w", snapshot.VolumeID, err)
+	}
 
 	// Create Cinder Volume from snapshot (backup)
 	logWithFields.Info("Starting to create volume from snapshot")
@@ -109,12 +135,19 @@ func (b *BlockStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 		VolumeType:       volumeType,
 		AvailabilityZone: volumeAZ,
 		SnapshotID:       snapshotID,
+		Metadata:         originVolume.Metadata,
 	}
 
 	volume, err := volumes.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from snapshot")
 		return "", fmt.Errorf("failed to create volume %v from snapshot %v: %w", volumeName, snapshotID, err)
+	}
+
+	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, volumeReadyTimeout)
+	if err != nil {
+		logWithFields.Error("volume didn't get into 'available' state within the time limit")
+		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -156,9 +189,7 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 		return false, fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
 	}
 
-	// Ready states:
-	//   https://github.com/openstack/cinder/blob/master/api-ref/source/v3/volumes-v3-volumes.inc#volumes-volumes
-	if volume.Status == "available" || volume.Status == "in-use" {
+	if utils.SliceContains(volumeStatuses, volume.Status) {
 		return true, nil
 	}
 
@@ -179,10 +210,16 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
+	originVolume, err := volumes.Get(b.client, volumeID).Extract()
+	if err != nil {
+		logWithFields.Error("failed to get volume from cinder")
+		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
+	}
+
 	opts := snapshots.CreateOpts{
 		Name:        snapshotName,
 		Description: "Velero snapshot",
-		Metadata:    tags,
+		Metadata:    utils.Merge(originVolume.Metadata, tags),
 		VolumeID:    volumeID,
 		Force:       true,
 	}
@@ -193,7 +230,7 @@ func (b *BlockStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]s
 		return "", fmt.Errorf("failed to create snapshot %v from volume %v: %w", snapshotName, volumeID, err)
 	}
 
-	err = snapshots.WaitForStatus(b.client, snapshot.ID, "available", snapshotReadyTimeout)
+	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, snapshotReadyTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshot.ID, err)
@@ -247,7 +284,7 @@ func (b *BlockStore) GetVolumeID(unstructuredPV runtime.Unstructured) (string, e
 		return "", nil
 	}
 
-	if pv.Spec.CSI.Driver == "cinder.csi.openstack.org" || pv.Spec.CSI.Driver == "disk.csi.everest.io" {
+	if utils.SliceContains(supportedDrivers, pv.Spec.CSI.Driver) {
 		return pv.Spec.CSI.VolumeHandle, nil
 	}
 
@@ -271,10 +308,10 @@ func (b *BlockStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID s
 
 	if pv.Spec.Cinder != nil {
 		pv.Spec.Cinder.VolumeID = volumeID
-	} else if pv.Spec.CSI != nil && (pv.Spec.CSI.Driver == "cinder.csi.openstack.org" || pv.Spec.CSI.Driver == "disk.csi.everest.io") {
+	} else if pv.Spec.CSI != nil && utils.SliceContains(supportedDrivers, pv.Spec.CSI.Driver) {
 		pv.Spec.CSI.VolumeHandle = volumeID
 	} else {
-		return nil, fmt.Errorf("persistent volume is missing 'spec.cinder.volumeID' or PV driver ('spec.csi.driver') doesn't match supported drivers(cinder.csi.openstack.org, disk.csi.everest.io)")
+		return nil, fmt.Errorf("persistent volume is missing 'spec.cinder.volumeID' or PV driver ('spec.csi.driver') doesn't match supported drivers (%v)", supportedDrivers)
 	}
 
 	res, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pv)
@@ -283,4 +320,34 @@ func (b *BlockStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID s
 	}
 
 	return &unstructured.Unstructured{Object: res}, nil
+}
+
+func (b *BlockStore) waitForVolumeStatus(id string, statuses []string, secs int) (current *volumes.Volume, err error) {
+	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+		current, err = volumes.Get(b.client, id).Extract()
+		if err != nil {
+			return false, err
+		}
+
+		if utils.SliceContains(statuses, current.Status) {
+			return true, nil
+		}
+
+		return false, nil
+	})
+}
+
+func (b *BlockStore) waitForSnapshotStatus(id string, statuses []string, secs int) (current *snapshots.Snapshot, err error) {
+	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+		current, err = snapshots.Get(b.client, id).Extract()
+		if err != nil {
+			return false, err
+		}
+
+		if utils.SliceContains(statuses, current.Status) {
+			return true, nil
+		}
+
+		return false, nil
+	})
 }

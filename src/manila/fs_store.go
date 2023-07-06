@@ -27,6 +27,19 @@ const (
 	snapshotReadyTimeout       = 300
 )
 
+var (
+	// active share statuses
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/shares.inc#shares
+	shareStatuses = []string{
+		"available",
+	}
+	// active snapshot statuses
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/snapshots.inc#share-snapshots
+	snapshotStatuses = []string{
+		"available",
+	}
+)
+
 // FSStore is a plugin for containing state for the Manila Shared Filesystem
 type FSStore struct {
 	client   *gophercloud.ServiceClient
@@ -37,9 +50,7 @@ type FSStore struct {
 
 // NewFSStore instantiates a Manila Shared Filesystem Snapshotter.
 func NewFSStore(log logrus.FieldLogger) *FSStore {
-	return &FSStore{
-		log: log,
-	}
+	return &FSStore{log: log}
 }
 
 var _ velerovolumesnapshotter.VolumeSnapshotter = (*FSStore)(nil)
@@ -120,12 +131,9 @@ func (b *FSStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 	logWithFields.Info("FSStore.CreateVolumeFromSnapshot called")
 
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
-	// Make sure snapshot is in available status
-	// Possible values for snapshot status:
-	//   https://github.com/openstack/manila/blob/master/api-ref/source/snapshots.inc#share-snapshots
 	logWithFields.Info("Waiting for snapshot to be in 'available' status")
 
-	snapshot, err := b.waitForSnapshotStatus(snapshotID, "available", snapshotReadyTimeout)
+	snapshot, err := b.waitForSnapshotStatus(snapshotID, snapshotStatuses, snapshotReadyTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' status within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' status within the time limit: %w", snapshotID, err)
@@ -152,6 +160,7 @@ func (b *FSStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 		Size:             snapshot.Size,
 		AvailabilityZone: volumeAZ,
 		Name:             volumeName,
+		Description:      "Velero backup from snapshot",
 		SnapshotID:       snapshotID,
 		Metadata:         originShare.Metadata,
 	}
@@ -161,12 +170,9 @@ func (b *FSStore) CreateVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 		return "", fmt.Errorf("failed to create share %v from snapshot %v: %w", volumeName, snapshotID, err)
 	}
 
-	// Make sure share is in available status
-	// Possible values for share status:
-	//   https://github.com/openstack/manila/blob/master/api-ref/source/shares.inc#shares
-	logWithFields.Info("Waiting for snapshot to be in 'available' status")
+	logWithFields.Info("Waiting for share to be in 'available' status")
 
-	_, err = b.waitForShareStatus(share.ID, "available", shareReadyTimeout)
+	_, err = b.waitForShareStatus(share.ID, shareStatuses, shareReadyTimeout)
 	if err != nil {
 		logWithFields.Error("share didn't get into 'available' status within the time limit")
 		return "", fmt.Errorf("share %v didn't get into 'available' status within the time limit: %w", share.ID, err)
@@ -224,9 +230,7 @@ func (b *FSStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err erro
 		return false, fmt.Errorf("failed to get share %v from manila: %w", volumeID, err)
 	}
 
-	// Ready statuses:
-	//   https://github.com/openstack/manila/blob/master/api-ref/source/shares.inc#shares
-	if share.Status == "available" {
+	if utils.SliceContains(shareStatuses, share.Status) {
 		return true, nil
 	}
 
@@ -251,15 +255,15 @@ func (b *FSStore) CreateSnapshot(volumeID, volumeAZ string, tags map[string]stri
 		Name:        snapshotName,
 		Description: "Velero snapshot",
 		ShareID:     volumeID,
+		// TODO: add Metadata once https://github.com/gophercloud/gophercloud/issues/2660 is merged
 	}
-
 	snapshot, err := snapshots.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create snapshot from share")
 		return "", fmt.Errorf("failed to create snapshot %v from share %v: %w", snapshotName, volumeID, err)
 	}
 
-	_, err = b.waitForSnapshotStatus(snapshot.ID, "available", snapshotReadyTimeout)
+	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, snapshotReadyTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' status within the time limit")
 		return "", fmt.Errorf("snapshot %v didn't get into 'available' status within the time limit: %w", snapshot.ID, err)
@@ -398,14 +402,14 @@ func (b *FSStore) getManilaMicroversion() (string, error) {
 	return api.Version, nil
 }
 
-func (b *FSStore) waitForShareStatus(id, status string, secs int) (current *shares.Share, err error) {
+func (b *FSStore) waitForShareStatus(id string, statuses []string, secs int) (current *shares.Share, err error) {
 	return current, gophercloud.WaitFor(secs, func() (bool, error) {
 		current, err = shares.Get(b.client, id).Extract()
 		if err != nil {
 			return false, err
 		}
 
-		if current.Status == status {
+		if utils.SliceContains(statuses, current.Status) {
 			return true, nil
 		}
 
@@ -413,14 +417,14 @@ func (b *FSStore) waitForShareStatus(id, status string, secs int) (current *shar
 	})
 }
 
-func (b *FSStore) waitForSnapshotStatus(id, status string, secs int) (current *snapshots.Snapshot, err error) {
+func (b *FSStore) waitForSnapshotStatus(id string, statuses []string, secs int) (current *snapshots.Snapshot, err error) {
 	return current, gophercloud.WaitFor(secs, func() (bool, error) {
 		current, err = snapshots.Get(b.client, id).Extract()
 		if err != nil {
 			return false, err
 		}
 
-		if current.Status == status {
+		if utils.SliceContains(statuses, current.Status) {
 			return true, nil
 		}
 

@@ -96,3 +96,25 @@ func microversionToInt(mv string) ([]int, error) {
 	}
 	return nil, fmt.Errorf("invalid microversion string: %v", mv)
 }
+
+// SliceContains checks whether a slice of comparable type contains an element
+func SliceContains[T comparable](elems []T, e T) bool {
+	for _, v := range elems {
+		if v == e {
+			return true
+		}
+	}
+	return false
+}
+
+// Merge merges maps. If more than one given map with the same key, then the
+// one that is later in the argument sequence takes precedence
+func Merge(args ...map[string]string) map[string]string {
+	m := make(map[string]string)
+	for _, arg := range args {
+		for k, v := range arg {
+			m[k] = v
+		}
+	}
+	return m
+}

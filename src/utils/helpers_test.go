@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
@@ -99,6 +100,33 @@ func TestCompareMicroversions(t *testing.T) {
 			t.Errorf("[%d] test failed: %v", i, err)
 		} else if test.res != v {
 			t.Errorf("[%d] test failed: expected %t, got %t", i, test.res, v)
+		}
+	}
+}
+
+func TestMerge(t *testing.T) {
+	tests := map[*map[string]string][]map[string]string{
+		&(map[string]string{
+			"a": "c",
+			"b": "c",
+			"c": "d",
+		}): {
+			{
+				"a": "b",
+				"c": "d",
+			},
+			{
+				"a": "c",
+			},
+			{
+				"b": "c",
+			},
+		},
+	}
+
+	for d, s := range tests {
+		if m := Merge(s...); !reflect.DeepEqual(*d, m) {
+			t.Errorf("test failed: expected %q, got %q", *d, m)
 		}
 	}
 }
