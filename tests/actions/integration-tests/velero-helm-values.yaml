@@ -8,7 +8,7 @@ configuration:
     accessMode: ReadWrite
     bucket: my-swift-container
   volumeSnapshotLocation:
-  - provider: community.openstack.org/openstack
+  - provider: community.openstack.org/openstack-cinder
     name: cinder
   - provider: community.openstack.org/openstack-manila
     name: manila
