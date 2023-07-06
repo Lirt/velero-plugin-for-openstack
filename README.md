@@ -243,7 +243,7 @@ Change configuration of `volumesnapshotlocations.velero.io`:
 
 ```yaml
 spec:
-  provider: community.openstack.org/openstack
+  provider: community.openstack.org/openstack-cinder
   # optional config
   # config:
   #   cloud: cloud1
@@ -278,7 +278,7 @@ configuration:
   volumeSnapshotLocation:
   # for Cinder block storage
   - name: cinder
-    provider: community.openstack.org/openstack
+    provider: community.openstack.org/openstack-cinder
   # for Manila shared filesystem storage
   - name: manila
     provider: community.openstack.org/openstack-manila
