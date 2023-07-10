@@ -118,3 +118,14 @@ func Merge(args ...map[string]string) map[string]string {
 	}
 	return m
 }
+
+// DurationToSeconds parses the string into a time.Duration format and returns
+// seconds in int format
+func DurationToSeconds(str string) (int, error) {
+	t, err := time.ParseDuration(str)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(t.Round(time.Second).Seconds()), nil
+}

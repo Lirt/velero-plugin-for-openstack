@@ -130,3 +130,20 @@ func TestMerge(t *testing.T) {
 		}
 	}
 }
+
+func TestDurationToSeconds(t *testing.T) {
+	tests := map[string]int{
+		"5m":  300,
+		"30m": 1800,
+		"1h":  3600,
+		"8h":  28800,
+	}
+
+	for d, s := range tests {
+		if v, err := DurationToSeconds(d); err != nil {
+			t.Errorf("[%s] test failed: %v", d, err)
+		} else if v != s {
+			t.Errorf("[%s] test failed: expected %d, got %d", d, s, v)
+		}
+	}
+}
