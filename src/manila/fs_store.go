@@ -1,9 +1,11 @@
 package manila
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
 	"github.com/gophercloud/gophercloud"
@@ -24,6 +26,7 @@ const (
 	minSupportedMicroversion   = "2.7"
 	getAccessRulesMicroversion = "2.45"
 	defaultTimeout             = "5m"
+	defaultDeleteDelay         = "10s"
 )
 
 var (
@@ -46,13 +49,16 @@ var (
 
 // FSStore is a plugin for containing state for the Manila Shared Filesystem
 type FSStore struct {
-	client          *gophercloud.ServiceClient
-	provider        *gophercloud.ProviderClient
-	config          map[string]string
-	shareTimeout    int
-	snapshotTimeout int
-	cloneTimeout    int
-	log             logrus.FieldLogger
+	client             *gophercloud.ServiceClient
+	provider           *gophercloud.ProviderClient
+	config             map[string]string
+	shareTimeout       int
+	snapshotTimeout    int
+	cloneTimeout       int
+	ensureDeleted      bool
+	ensureDeletedDelay int
+	cascadeDelete      bool
+	log                logrus.FieldLogger
 }
 
 // NewFSStore instantiates a Manila Shared Filesystem Snapshotter.
@@ -94,6 +100,19 @@ func (b *FSStore) Init(config map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("cannot parse time from cloneTimeout config variable: %w", err)
 	}
+	// parse options
+	b.ensureDeleted, err = strconv.ParseBool(utils.GetConf(b.config, "ensureDeleted", "false"))
+	if err != nil {
+		return fmt.Errorf("cannot parse ensureDeleted config variable: %w", err)
+	}
+	b.ensureDeletedDelay, err = utils.DurationToSeconds(utils.GetConf(b.config, "ensureDeletedDelay", defaultDeleteDelay))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from ensureDeletedDelay config variable: %w", err)
+	}
+	b.cascadeDelete, err = strconv.ParseBool(utils.GetConf(b.config, "cascadeDelete", "false"))
+	if err != nil {
+		return fmt.Errorf("cannot parse cascadeDelete config variable: %w", err)
+	}
 
 	// Authenticate to Openstack
 	err = utils.Authenticate(&b.provider, "manila", config, b.log)
@@ -128,6 +147,7 @@ func (b *FSStore) Init(config map[string]string) error {
 		if mv, err := b.getManilaMicroversion(); err != nil {
 			logWithFields.Warningf("Failed to obtain supported Manila microversions (using the default one: %v): %v", b.client.Microversion, err)
 		} else {
+			// use GET method to obtain access rules
 			ok, err := utils.CompareMicroversions("lte", getAccessRulesMicroversion, mv)
 			if err != nil {
 				logWithFields.Warningf("Failed to compare supported Manila microversions (using the default one: %v): %v", b.client.Microversion, err)
@@ -291,6 +311,16 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 		return "", "", fmt.Errorf("failed to create an intermediate share snapshot from the %v source volume share: %w", shareID, err)
 	}
 	defer func() {
+		// Delete intermediate snapshot from Manila
+		if b.ensureDeleted {
+			logWithFields.Infof("waiting for an intermediate %s snapshot to be deleted", snapshot.ID)
+			err := b.ensureSnapshotDeleted(logWithFields, snapshot.ID, b.snapshotTimeout)
+			if err != nil {
+				logWithFields.Errorf("failed to delete intermediate snapshot: %v", err)
+			}
+			return
+		}
+
 		// Delete intermediate snapshot from Manila
 		logWithFields.Infof("removing an intermediate %s snapshot", snapshot.ID)
 		err := snapshots.Delete(b.client, snapshot.ID).ExtractErr()
@@ -485,6 +515,11 @@ func (b *FSStore) deleteSnapshot(snapshotID string) error {
 	logWithFields.Info("FSStore.DeleteSnapshot called")
 
 	// Delete snapshot from Manila
+	if b.ensureDeleted {
+		logWithFields.Infof("waiting for a %s snapshot to be deleted", snapshotID)
+		return b.ensureSnapshotDeleted(logWithFields, snapshotID, b.snapshotTimeout)
+	}
+
 	err := snapshots.Delete(b.client, snapshotID).ExtractErr()
 	if err != nil {
 		if _, ok := err.(gophercloud.ErrDefault404); ok {
@@ -498,6 +533,47 @@ func (b *FSStore) deleteSnapshot(snapshotID string) error {
 	return nil
 }
 
+// deleteSnapshots removes all the share snapshots
+func (b *FSStore) deleteSnapshots(logWithFields *logrus.Entry, shareID string) error {
+	listOpts := snapshots.ListOpts{
+		ShareID: shareID,
+	}
+	pages, err := snapshots.ListDetail(b.client, listOpts).AllPages()
+	if err != nil {
+		return fmt.Errorf("failed to list %s share snapshots: %w", shareID, err)
+	}
+	allSnapshots, err := snapshots.ExtractSnapshots(pages)
+	if err != nil {
+		return fmt.Errorf("failed to extract %s share snapshots: %w", shareID, err)
+	}
+
+	wg := sync.WaitGroup{}
+	errs := make(chan error, len(allSnapshots))
+	deleteSnapshot := func(snapshotID string) {
+		logWithFields.Infof("deleting the %s snapshot", snapshotID)
+		err := b.ensureSnapshotDeleted(logWithFields, snapshotID, b.snapshotTimeout)
+		if err != nil {
+			logWithFields.Errorf("failed to delete %s snapshot: %v", snapshotID, err)
+			errs <- fmt.Errorf("failed to delete %s snapshot: %w", snapshotID, err)
+		}
+		wg.Done()
+	}
+
+	for _, snapshot := range allSnapshots {
+		wg.Add(1)
+		go deleteSnapshot(snapshot.ID)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for e := range errs {
+		err = errors.Join(err, e)
+	}
+
+	return err
+}
+
 func (b *FSStore) deleteClone(cloneID string) error {
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"cloneID": cloneID,
@@ -505,7 +581,20 @@ func (b *FSStore) deleteClone(cloneID string) error {
 	})
 	logWithFields.Info("FSStore.DeleteSnapshot called")
 
+	// cascade deletion of the share dependent resources
+	if cloneID != "" && b.cascadeDelete {
+		err := b.deleteSnapshots(logWithFields, cloneID)
+		if err != nil {
+			return fmt.Errorf("failed to delete %s share snapshots: %w", cloneID, err)
+		}
+	}
+
 	// Delete clone share from Manila
+	if b.ensureDeleted {
+		logWithFields.Infof("waiting for a %s clone share to be deleted", cloneID)
+		return b.ensureShareDeleted(logWithFields, cloneID, b.cloneTimeout)
+	}
+
 	err := shares.Delete(b.client, cloneID).ExtractErr()
 	if err != nil {
 		if _, ok := err.(gophercloud.ErrDefault404); ok {
@@ -582,11 +671,11 @@ func (b *FSStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID stri
 func (b *FSStore) getShareAccessRule(logWithFields *logrus.Entry, volumeID string) (*shares.AccessRight, error) {
 	var rules interface{}
 	var err error
-	// deprecated API call
-	if b.client.Microversion == minSupportedMicroversion {
-		rules, err = shares.ListAccessRights(b.client, volumeID).Extract()
-	} else {
+	if ok, _ := utils.CompareMicroversions("lte", getAccessRulesMicroversion, b.client.Microversion); ok {
 		rules, err = shareaccessrules.List(b.client, volumeID).Extract()
+	} else {
+		// deprecated API call
+		rules, err = shares.ListAccessRights(b.client, volumeID).Extract()
 	}
 	if err != nil {
 		logWithFields.Errorf("failed to list share %v access rules from manila", volumeID)
@@ -625,31 +714,81 @@ func (b *FSStore) getManilaMicroversion() (string, error) {
 }
 
 func (b *FSStore) waitForShareStatus(id string, statuses []string, secs int) (current *shares.Share, err error) {
-	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
 		current, err = shares.Get(b.client, id).Extract()
 		if err != nil {
-			return false, err
+			return "", err
 		}
-
-		if utils.SliceContains(statuses, current.Status) {
-			return true, nil
-		}
-
-		return false, nil
+		return current.Status, nil
 	})
 }
 
 func (b *FSStore) waitForSnapshotStatus(id string, statuses []string, secs int) (current *snapshots.Snapshot, err error) {
-	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
 		current, err = snapshots.Get(b.client, id).Extract()
 		if err != nil {
-			return false, err
+			return "", err
 		}
-
-		if utils.SliceContains(statuses, current.Status) {
-			return true, nil
-		}
-
-		return false, nil
+		return current.Status, nil
 	})
+}
+
+func (b *FSStore) ensureShareDeleted(logWithFields *logrus.Entry, id string, secs int) error {
+	deleteFunc := func() error {
+		err := shares.Delete(b.client, id).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to delete a %s share: %v", id, err)
+		}
+		return err
+	}
+	checkFunc := func() error {
+		_, err := b.waitForShareStatus(id, []string{"deleted"}, secs)
+		if err != nil {
+			logWithFields.Infof("failed to wait for a %s share status: %v", id, err)
+		}
+		return err
+	}
+	resetFunc := func() error {
+		logWithFields.Infof("resetting a %s share status and trying again", id)
+		opts := &shares.ResetStatusOpts{
+			Status: "error",
+		}
+		err := shares.ResetStatus(b.client, id, opts).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to reset a %s share status: %v", id, err)
+		}
+		return err
+	}
+
+	return utils.EnsureDeleted(deleteFunc, checkFunc, resetFunc, secs, b.ensureDeletedDelay)
+}
+
+func (b *FSStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id string, secs int) error {
+	deleteFunc := func() error {
+		err := snapshots.Delete(b.client, id).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to delete a %s snapshot: %v", id, err)
+		}
+		return err
+	}
+	checkFunc := func() error {
+		_, err := b.waitForSnapshotStatus(id, []string{"deleted"}, secs)
+		if err != nil {
+			logWithFields.Infof("failed to wait for a %s snapshot status: %v", id, err)
+		}
+		return err
+	}
+	resetFunc := func() error {
+		logWithFields.Infof("resetting a %s snapshot status and trying again", id)
+		opts := &snapshots.ResetStatusOpts{
+			Status: "error",
+		}
+		err := snapshots.ResetStatus(b.client, id, opts).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to reset a %s snapshot status: %v", id, err)
+		}
+		return err
+	}
+
+	return utils.EnsureDeleted(deleteFunc, checkFunc, resetFunc, secs, b.ensureDeletedDelay)
 }

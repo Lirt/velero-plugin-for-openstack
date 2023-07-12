@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gophercloud/gophercloud"
 )
 
 var (
@@ -16,6 +18,16 @@ var (
 	// regexp to parse OpenStack service microversion
 	mvRe = regexp.MustCompile(`^(\d+).(\d+)$`)
 )
+
+// ErrStatus is used to indicate that a resource has unexpected Status
+type ErrStatus struct {
+	Status string
+}
+
+// Error satisfies golang error interface
+func (e ErrStatus) Error() string {
+	return fmt.Sprintf("unexpected %s status", e.Status)
+}
 
 // GetEnv gets value from environment variable or fallbacks to default value
 // This snippet is from https://stackoverflow.com/a/40326580/3323419
@@ -128,4 +140,84 @@ func DurationToSeconds(str string) (int, error) {
 	}
 
 	return int(t.Round(time.Second).Seconds()), nil
+}
+
+// WaitForStatus wait until the resource status satisfies the expected statuses
+func WaitForStatus(statuses []string, timeout int, checkFunc func() (string, error)) error {
+	return gophercloud.WaitFor(timeout, func() (bool, error) {
+		status, err := checkFunc()
+		if err != nil {
+			if _, ok := err.(gophercloud.ErrDefault404); ok && SliceContains(statuses, "deleted") {
+				return true, nil
+			}
+			return false, err
+		}
+
+		if SliceContains(statuses, status) {
+			return true, nil
+		}
+
+		if strings.Contains(status, "error") {
+			return false, ErrStatus{Status: status}
+		}
+
+		return false, nil
+	})
+}
+
+// EnsureDeleted ensures that the resource is deleted, resets the resource
+// status if it's in error state and tries again until the timeout
+func EnsureDeleted(deleteFunc, checkFunc, resetFunc func() error, timeout int, delay int) error {
+	retryDelay := time.Duration(delay) * time.Second
+	duration := time.Duration(timeout) * time.Second
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	for {
+		err := deleteFunc()
+		if err != nil {
+			switch err.(type) {
+			case gophercloud.ErrDefault404:
+				return nil
+			case gophercloud.ErrDefault409:
+				time.Sleep(retryDelay)
+				continue
+			}
+			return err
+		}
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- checkFunc()
+		}()
+
+		select {
+		case <-timer.C:
+			go func() {
+				// drain errChan if timer triggered before errChan
+				<-errChan
+			}()
+			return fmt.Errorf("wait time exceeded: %s", duration)
+		case err := <-errChan:
+			// resource is deleted
+			if err == nil {
+				return nil
+			}
+
+			// if the status not expected, reset the status and try again
+			if _, ok := err.(ErrStatus); !ok {
+				return err
+			}
+		}
+
+		// reset status and try to delete it again
+		err = resetFunc()
+		if err != nil {
+			if _, ok := err.(gophercloud.ErrDefault404); ok {
+				return nil
+			}
+			return err
+		}
+
+		time.Sleep(retryDelay)
+	}
 }

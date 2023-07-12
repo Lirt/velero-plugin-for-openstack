@@ -297,6 +297,18 @@ configuration:
       cloneTimeout: 5m
       backupTimeout: 5m
       imageTimeout: 5m
+      # ensures that the Cinder volume/snapshot is removed
+      # if an original snapshot volume was marked to be deleted, the volume may
+      # end up in "error_deleting" status.
+      # if the volume/snapshot is in "error_deleting" status, the plugin will try to reset
+      # its status (usually extra admin permissions are required) and delete it again
+      # within the defined "snapshotTimeout" or "cloneTimeout"
+      ensureDeleted: "true"
+      # a delay to wait between delete/reset actions when "ensureDeleted" is enabled
+      ensureDeletedDelay: 10s
+      # deletes all dependent volume resources (i.e. snapshots) before deleting
+      # the clone volume (works only, when a snapshot method is set to clone)
+      cascadeDelete: "true"
   # for Manila shared filesystem storage
   - name: manila
     provider: community.openstack.org/openstack-manila
@@ -313,6 +325,18 @@ configuration:
       shareTimeout: 5m
       snapshotTimeout: 5m
       cloneTimeout: 5m
+      # ensures that the Manila share/snapshot is removed
+      # this is a workaround to the https://bugs.launchpad.net/manila/+bug/2025641 and
+      # https://bugs.launchpad.net/manila/+bug/1960239 bugs
+      # if the share/snapshot is in "error_deleting" status, the plugin will try to reset
+      # its status (usually extra admin permissions are required) and delete it again
+      # within the defined "snapshotTimeout" or "cloneTimeout"
+      ensureDeleted: "true"
+      # a delay to wait between delete/reset actions when "ensureDeleted" is enabled
+      ensureDeletedDelay: 10s
+      # deletes all dependent share resources (i.e. snapshots) before deleting
+      # the clone share (works only, when a snapshot method is set to clone)
+      cascadeDelete: "true"
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.5.2
