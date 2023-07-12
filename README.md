@@ -280,20 +280,32 @@ configuration:
   - name: cinder
     provider: community.openstack.org/openstack-cinder
     config:
+      # optional snapshot method:
+      # * "snapshot" is a default cinder snapshot method
+      # * "clone" is for a full volume clone instead of a snapshot allowing the
+      # source volume to be deleted
+      method: clone
       # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
       # (default: 5m)
       volumeTimeout: 5m
       snapshotTimeout: 5m
+      cloneTimeout: 5m
   # for Manila shared filesystem storage
   - name: manila
     provider: community.openstack.org/openstack-manila
     config:
+      # optional snapshot method:
+      # * "snapshot" is a default manila snapshot method
+      # * "clone" is for a full share clone instead of a snapshot allowing the
+      # source share to be deleted
+      method: clone
       # optional Manila CSI driver name (default: nfs.manila.csi.openstack.org)
       driver: ceph.manila.csi.openstack.org
       # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
       # (default: 5m)
       shareTimeout: 5m
       snapshotTimeout: 5m
+      cloneTimeout: 5m
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.5.2
