@@ -214,7 +214,7 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 	_, err = b.waitForShareStatus(share.ID, shareStatuses, b.shareTimeout)
 	if err != nil {
 		logWithFields.Error("share didn't get into 'available' status within the time limit")
-		return "", fmt.Errorf("share %v didn't get into 'available' status within the time limit: %w", share.ID, err)
+		return share.ID, fmt.Errorf("share %v didn't get into 'available' status within the time limit: %w", share.ID, err)
 	}
 
 	// grant the only one supported share access from the original share
@@ -226,7 +226,7 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 	shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to grant an access to manila share")
-		return "", fmt.Errorf("failed to grant an access to manila share %v: %w", share.ID, err)
+		return share.ID, fmt.Errorf("failed to grant an access to manila share %v: %w", share.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -250,33 +250,33 @@ func (b *FSStore) createVolumeFromClone(cloneID, volumeType, volumeAZ string) (s
 
 	volumeName := fmt.Sprintf("%s.backup.%s", cloneID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	volumeDesc := "Velero backup from share clone"
-	share, shareAccess, err := b.cloneShare(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
+	shareID, shareAccessID, err := b.cloneShare(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
 	if err != nil {
-		return "", err
+		return shareID, err
 	}
 
 	logWithFields.WithFields(logrus.Fields{
-		"shareID":       share.ID,
-		"shareAccessID": shareAccess.ID,
+		"shareID":       shareID,
+		"shareAccessID": shareAccessID,
 	}).Info("Backup share was created")
-	return share.ID, nil
+	return shareID, nil
 }
 
-func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, shareDesc, shareAZ string, tags map[string]string) (*shares.Share, *shares.AccessRight, error) {
+func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, shareDesc, shareAZ string, tags map[string]string) (string, string, error) {
 	// Make sure source share is in available status
 	logWithFields.Info("Waiting for source share to be in 'available' status")
 
 	originShare, err := b.waitForShareStatus(shareID, shareStatuses, b.shareTimeout)
 	if err != nil {
 		logWithFields.Error("source share didn't get into 'available' status within the time limit")
-		return nil, nil, fmt.Errorf("source share %v didn't get into 'available' status within the time limit: %w", shareID, err)
+		return "", "", fmt.Errorf("source share %v didn't get into 'available' status within the time limit: %w", shareID, err)
 	}
 	logWithFields.Info("Source share clone is in 'available' status")
 
 	// get original share access rule
 	rule, err := b.getShareAccessRule(logWithFields, originShare.ID)
 	if err != nil {
-		return nil, nil, err
+		return "", "", err
 	}
 
 	// create an intermediate share snapshot
@@ -288,7 +288,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 	snapshot, err := snapshots.Create(b.client, snapOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create an intermediate share snapshot from the source volume share")
-		return nil, nil, fmt.Errorf("failed to create an intermediate share snapshot from the %v source volume share: %w", shareID, err)
+		return "", "", fmt.Errorf("failed to create an intermediate share snapshot from the %v source volume share: %w", shareID, err)
 	}
 	defer func() {
 		// Delete intermediate snapshot from Manila
@@ -309,7 +309,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("intermediate snapshot didn't get into 'available' status within the time limit")
-		return nil, nil, fmt.Errorf("intermediate snapshot %v didn't get into 'available' status within the time limit: %w", snapshot.ID, err)
+		return "", "", fmt.Errorf("intermediate snapshot %v didn't get into 'available' status within the time limit: %w", snapshot.ID, err)
 	}
 	logWithFields.Info("Intermediate snapshot is in 'available' status")
 
@@ -327,7 +327,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 	share, err := shares.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Errorf("failed to create share clone from intermediate snapshot")
-		return nil, nil, fmt.Errorf("failed to create share clone %v from intermediate snapshot %v: %w", shareName, snapshot.ID, err)
+		return "", "", fmt.Errorf("failed to create share clone %v from intermediate snapshot %v: %w", shareName, snapshot.ID, err)
 	}
 
 	// Make sure share clone is in available status
@@ -336,7 +336,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 	_, err = b.waitForShareStatus(share.ID, shareStatuses, b.cloneTimeout)
 	if err != nil {
 		logWithFields.Error("share clone didn't get into 'available' status within the time limit")
-		return nil, nil, fmt.Errorf("share clone %v didn't get into 'available' status within the time limit: %w", share.ID, err)
+		return share.ID, "", fmt.Errorf("share clone %v didn't get into 'available' status within the time limit: %w", share.ID, err)
 	}
 
 	// grant the only one supported share access from the original share
@@ -348,10 +348,10 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 	shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to grant an access to manila share clone")
-		return nil, nil, fmt.Errorf("failed to grant an access to manila share clone %v: %w", share.ID, err)
+		return share.ID, "", fmt.Errorf("failed to grant an access to manila share clone %v: %w", share.ID, err)
 	}
 
-	return share, shareAccess, nil
+	return share.ID, shareAccess.ID, nil
 }
 
 // GetVolumeInfo returns type of the specified volume in the given availability zone.
@@ -433,7 +433,7 @@ func (b *FSStore) createSnapshot(volumeID, volumeAZ string, tags map[string]stri
 	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' status within the time limit")
-		return "", fmt.Errorf("snapshot %v didn't get into 'available' status within the time limit: %w", snapshot.ID, err)
+		return snapshot.ID, fmt.Errorf("snapshot %v didn't get into 'available' status within the time limit: %w", snapshot.ID, err)
 	}
 	logWithFields.Info("Snapshot is in 'available' status")
 
@@ -456,15 +456,15 @@ func (b *FSStore) createClone(volumeID, volumeAZ string, tags map[string]string)
 	logWithFields.Info("FSStore.CreateSnapshot called")
 
 	cloneDesc := "Velero share clone"
-	clone, _, err := b.cloneShare(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
+	cloneID, _, err := b.cloneShare(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
 	if err != nil {
-		return "", err
+		return cloneID, err
 	}
 
 	logWithFields.WithFields(logrus.Fields{
-		"cloneID": clone.ID,
+		"cloneID": cloneID,
 	}).Info("Share clone finished successfuly")
-	return clone.ID, nil
+	return cloneID, nil
 }
 
 // DeleteSnapshot deletes the specified volume snapshot.

@@ -263,7 +263,7 @@ func (b *BlockStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -285,15 +285,15 @@ func (b *BlockStore) createVolumeFromClone(cloneID, volumeType, volumeAZ string)
 
 	volumeName := fmt.Sprintf("%s.backup.%s", cloneID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	volumeDesc := "Velero backup from volume clone"
-	volume, err := b.cloneVolume(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
+	volumeID, err := b.cloneVolume(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
 	if err != nil {
-		return "", err
+		return volumeID, err
 	}
 
 	logWithFields.WithFields(logrus.Fields{
-		"volumeID": volume.ID,
+		"volumeID": volumeID,
 	}).Info("Backup volume was created")
-	return volume.ID, nil
+	return volumeID, nil
 }
 
 func (b *BlockStore) createVolumeFromBackup(backupID, volumeType, volumeAZ string) (string, error) {
@@ -340,7 +340,7 @@ func (b *BlockStore) createVolumeFromBackup(backupID, volumeType, volumeAZ strin
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -391,7 +391,7 @@ func (b *BlockStore) createVolumeFromImage(imageID, volumeType, volumeAZ string)
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -400,14 +400,14 @@ func (b *BlockStore) createVolumeFromImage(imageID, volumeType, volumeAZ string)
 	return volume.ID, nil
 }
 
-func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeName, volumeDesc, volumeAZ string, tags map[string]string) (*volumes.Volume, error) {
+func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeName, volumeDesc, volumeAZ string, tags map[string]string) (string, error) {
 	// Make sure source volume clone is in ready state
 	logWithFields.Info("Waiting for source volume clone to be in 'available' state")
 
 	originVolume, err := b.waitForVolumeStatus(volumeID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("source volume clone didn't get into 'available' state within the time limit")
-		return nil, fmt.Errorf("source volume clone %v didn't get into 'available' state within the time limit: %w", volumeID, err)
+		return "", fmt.Errorf("source volume clone %v didn't get into 'available' state within the time limit: %w", volumeID, err)
 	}
 	logWithFields.Info("Source volume is in 'available' state")
 
@@ -425,16 +425,16 @@ func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeNa
 	volume, err := volumes.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from volume clone")
-		return nil, fmt.Errorf("failed to create volume %v from volume clone %v: %w", volumeName, volumeID, err)
+		return "", fmt.Errorf("failed to create volume %v from volume clone %v: %w", volumeName, volumeID, err)
 	}
 
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return nil, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
-	return volume, nil
+	return volume.ID, nil
 }
 
 // GetVolumeInfo returns type of the specified volume in the given availability zone.
@@ -528,7 +528,7 @@ func (b *BlockStore) createSnapshot(volumeID, volumeAZ string, tags map[string]s
 	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshot.ID, err)
+		return snapshot.ID, fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshot.ID, err)
 	}
 	logWithFields.Info("Snapshot is in 'available' state")
 
@@ -551,15 +551,15 @@ func (b *BlockStore) createClone(volumeID, volumeAZ string, tags map[string]stri
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
 	cloneDesc := "Velero volume clone"
-	clone, err := b.cloneVolume(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
+	cloneID, err := b.cloneVolume(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
 	if err != nil {
-		return "", err
+		return cloneID, err
 	}
 
 	logWithFields.WithFields(logrus.Fields{
-		"cloneID": clone.ID,
+		"cloneID": cloneID,
 	}).Info("Volume clone finished successfuly")
-	return clone.ID, nil
+	return cloneID, nil
 }
 
 func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]string) (string, error) {
@@ -597,7 +597,7 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 	_, err = b.waitForBackupStatus(backup.ID, backupStatuses, b.backupTimeout)
 	if err != nil {
 		logWithFields.Error("backup didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("backup %v didn't get into 'available' state within the time limit: %w", backup.ID, err)
+		return backup.ID, fmt.Errorf("backup %v didn't get into 'available' state within the time limit: %w", backup.ID, err)
 	}
 	logWithFields.Info("Volume backup is in 'available' state")
 
@@ -643,7 +643,7 @@ func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]stri
 	_, err = b.waitForImageStatus(image.ImageID, imageStatuses, b.imageTimeout)
 	if err != nil {
 		logWithFields.Error("image didn't get into 'active' state within the time limit")
-		return "", fmt.Errorf("image %v didn't get into 'active' state within the time limit: %w", image.ImageID, err)
+		return image.ImageID, fmt.Errorf("image %v didn't get into 'active' state within the time limit: %w", image.ImageID, err)
 	}
 	logWithFields.Info("Volume image is in 'active' state")
 
@@ -651,7 +651,7 @@ func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]stri
 	_, err = images.Update(b.imgClient, image.ImageID, updateProperties).Extract()
 	if err != nil {
 		logWithFields.Error("failed to update image properties")
-		return "", fmt.Errorf("failed to update image properties: %w", err)
+		return image.ImageID, fmt.Errorf("failed to update image properties: %w", err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
