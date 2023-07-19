@@ -1,6 +1,6 @@
 module github.com/Lirt/velero-plugin-for-openstack
 
-go 1.19
+go 1.20
 
 require (
 	github.com/gophercloud/gophercloud v1.3.1-0.20230331133731-6e0b5eac8554

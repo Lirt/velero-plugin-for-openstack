@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        go-version: [ '1.19' ]
+        go-version: [ '1.20' ]
     steps:
       - name: Checkout velero-plugin-for-openstack
         uses: actions/checkout@v3
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        go-version: [ '1.19' ]
+        go-version: [ '1.20' ]
     env:
       VELERO_CLI_VERSION: 1.11.0
       # Contains Velero 1.11.0
