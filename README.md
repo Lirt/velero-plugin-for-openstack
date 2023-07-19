@@ -325,18 +325,22 @@ configuration:
       shareTimeout: 5m
       snapshotTimeout: 5m
       cloneTimeout: 5m
-      # ensures that the Manila share/snapshot is removed
+      replicaTimeout: 5m
+      # ensures that the Manila share/snapshot/replica is removed
       # this is a workaround to the https://bugs.launchpad.net/manila/+bug/2025641 and
       # https://bugs.launchpad.net/manila/+bug/1960239 bugs
-      # if the share/snapshot is in "error_deleting" status, the plugin will try to reset
-      # its status (usually extra admin permissions are required) and delete it again
-      # within the defined "snapshotTimeout" or "cloneTimeout"
+      # if the share/snapshot/replica is in "error_deleting" status, the plugin will try
+      # to reset its status (usually extra admin permissions are required) and delete it
+      # again within the defined "cloneTimeout", "snapshotTimeout" or "replicaTimeout"
       ensureDeleted: "true"
       # a delay to wait between delete/reset actions when "ensureDeleted" is enabled
       ensureDeletedDelay: 10s
-      # deletes all dependent share resources (i.e. snapshots) before deleting
+      # deletes all dependent share resources (i.e. snapshots, replicas) before deleting
       # the clone share (works only, when a snapshot method is set to clone)
       cascadeDelete: "true"
+      # enforces availability zone checks when the availability zone of a
+      # snapshot/share differs from the Velero metadata
+      enforceAZ: "true"
 initContainers:
 - name: velero-plugin-openstack
   image: lirt/velero-plugin-for-openstack:v0.5.2

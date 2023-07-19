@@ -11,6 +11,7 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/apiversions"
+	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/replicas"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/shareaccessrules"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/shares"
 	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/snapshots"
@@ -25,6 +26,7 @@ const (
 	defaultCsiManilaDriverName = "nfs.manila.csi.openstack.org"
 	minSupportedMicroversion   = "2.7"
 	getAccessRulesMicroversion = "2.45"
+	replicasMicroversion       = "2.56"
 	defaultTimeout             = "5m"
 	defaultDeleteDelay         = "10s"
 )
@@ -45,6 +47,21 @@ var (
 	snapshotStatuses = []string{
 		"available",
 	}
+	// active replica statuses
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/share-replicas.inc#share-replicas-since-api-v211
+	replicaStatuses = []string{
+		"available",
+	}
+	// active replica states
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/share-replicas.inc#share-replicas-since-api-v211
+	replicaActiveStates = []string{
+		"active",
+	}
+	// in-sync replica states
+	//   https://github.com/openstack/manila/blob/master/api-ref/source/share-replicas.inc#share-replicas-since-api-v211
+	replicaInSyncStates = []string{
+		"in_sync",
+	}
 )
 
 // FSStore is a plugin for containing state for the Manila Shared Filesystem
@@ -55,9 +72,11 @@ type FSStore struct {
 	shareTimeout       int
 	snapshotTimeout    int
 	cloneTimeout       int
+	replicaTimeout     int
 	ensureDeleted      bool
 	ensureDeletedDelay int
 	cascadeDelete      bool
+	enforceAZ          bool
 	log                logrus.FieldLogger
 }
 
@@ -100,6 +119,10 @@ func (b *FSStore) Init(config map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("cannot parse time from cloneTimeout config variable: %w", err)
 	}
+	b.replicaTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "replicaTimeout", defaultTimeout))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from replicaTimeout config variable: %w", err)
+	}
 	// parse options
 	b.ensureDeleted, err = strconv.ParseBool(utils.GetConf(b.config, "ensureDeleted", "false"))
 	if err != nil {
@@ -108,6 +131,10 @@ func (b *FSStore) Init(config map[string]string) error {
 	b.ensureDeletedDelay, err = utils.DurationToSeconds(utils.GetConf(b.config, "ensureDeletedDelay", defaultDeleteDelay))
 	if err != nil {
 		return fmt.Errorf("cannot parse time from ensureDeletedDelay config variable: %w", err)
+	}
+	b.enforceAZ, err = strconv.ParseBool(utils.GetConf(b.config, "enforceAZ", "false"))
+	if err != nil {
+		return fmt.Errorf("cannot parse enforceAZ config variable: %w", err)
 	}
 	b.cascadeDelete, err = strconv.ParseBool(utils.GetConf(b.config, "cascadeDelete", "false"))
 	if err != nil {
@@ -146,6 +173,17 @@ func (b *FSStore) Init(config map[string]string) error {
 		b.client.Microversion = minSupportedMicroversion
 		if mv, err := b.getManilaMicroversion(); err != nil {
 			logWithFields.Warningf("Failed to obtain supported Manila microversions (using the default one: %v): %v", b.client.Microversion, err)
+		} else if b.enforceAZ {
+			// enforce new Manila path microversion
+			ok, err := utils.CompareMicroversions("lte", replicasMicroversion, mv)
+			if err != nil {
+				return fmt.Errorf("failed to compare supported Manila microversions: %w", err)
+			} else if !ok {
+				return fmt.Errorf("enforceAZ config option is not supported in your environment")
+			}
+
+			b.client.Microversion = replicasMicroversion
+			logWithFields.Infof("Setting the supported %v microversion", b.client.Microversion)
 		} else {
 			// use GET method to obtain access rules
 			ok, err := utils.CompareMicroversions("lte", getAccessRulesMicroversion, mv)
@@ -222,6 +260,11 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 		SnapshotID:       snapshotID,
 		Metadata:         originShare.Metadata,
 	}
+	if b.enforceAZ && volumeAZ != "" && originShare.AvailabilityZone != volumeAZ {
+		// omit AZ and move the share to a new AZ later
+		// see https://github.com/openstack/manila/blob/stable/zed/manila/share/api.py#L258-L266
+		opts.AvailabilityZone = ""
+	}
 	share, err := shares.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Errorf("failed to create share from snapshot")
@@ -251,6 +294,15 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 			return share.ID, fmt.Errorf("failed to grant an access to manila share %v: %w", share.ID, err)
 		}
 		shareAccessID = shareAccess.ID
+	}
+
+	// migrate a share to the desired AZ
+	if b.enforceAZ && volumeAZ != "" && share.AvailabilityZone != volumeAZ {
+		err = b.changeAZ(logWithFields, share.ID, volumeAZ)
+		if err != nil {
+			logWithFields.Errorf("failed to move a share to the target %s availability zone", volumeAZ)
+			return share.ID, fmt.Errorf("failed to move a share to the target %s availability zone: %w", volumeAZ, err)
+		}
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -358,6 +410,11 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 		SnapshotID:       snapshot.ID,
 		Metadata:         utils.Merge(originShare.Metadata, tags),
 	}
+	if b.enforceAZ && shareAZ != "" && originShare.AvailabilityZone != shareAZ {
+		// omit AZ and move the share to a new AZ later
+		// see https://github.com/openstack/manila/blob/stable/zed/manila/share/api.py#L258-L266
+		opts.AvailabilityZone = ""
+	}
 	share, err := shares.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Errorf("failed to create share clone from intermediate snapshot")
@@ -373,6 +430,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 		return share.ID, "", fmt.Errorf("share clone %v didn't get into 'available' status within the time limit: %w", share.ID, err)
 	}
 
+	var shareAccessID string
 	if rule != nil {
 		// grant the only one supported share access from the original share
 		accessOpts := &shares.GrantAccessOpts{
@@ -385,10 +443,19 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 			logWithFields.Error("failed to grant an access to manila share clone")
 			return share.ID, "", fmt.Errorf("failed to grant an access to manila share clone %v: %w", share.ID, err)
 		}
-		return share.ID, shareAccess.ID, nil
+		shareAccessID = shareAccess.ID
 	}
 
-	return share.ID, "", nil
+	// migrate a share to the desired AZ
+	if b.enforceAZ && shareAZ != "" && share.AvailabilityZone != shareAZ {
+		err = b.changeAZ(logWithFields, shareID, shareAZ)
+		if err != nil {
+			logWithFields.Errorf("failed to move a share to the target %s availability zone", shareAZ)
+			return share.ID, shareAccessID, fmt.Errorf("failed to move a share to the target %s availability zone: %w", shareAZ, err)
+		}
+	}
+
+	return share.ID, shareAccessID, nil
 }
 
 // GetVolumeInfo returns type of the specified volume in the given availability zone.
@@ -540,6 +607,44 @@ func (b *FSStore) deleteSnapshot(snapshotID string) error {
 	return nil
 }
 
+// deleteReplicas removes all the share replicas keeping a single active one
+func (b *FSStore) deleteReplicas(logWithFields *logrus.Entry, shareID string) error {
+	curReplica, allReplicas, err := b.findShareActiveReplica(logWithFields, shareID)
+	if err != nil {
+		return err
+	}
+
+	wg := sync.WaitGroup{}
+	errs := make(chan error, len(allReplicas))
+	deleteReplica := func(replicaID string) {
+		logWithFields.Infof("deleting the %s replica", replicaID)
+		err := b.ensureReplicaDeleted(logWithFields, replicaID, b.replicaTimeout)
+		if err != nil {
+			logWithFields.Errorf("failed to delete %s replica: %v", replicaID, err)
+			errs <- fmt.Errorf("failed to delete %s replica: %w", replicaID, err)
+		}
+		wg.Done()
+	}
+
+	for _, replica := range allReplicas {
+		// keep the current active replica
+		if curReplica != nil && curReplica.ID == replica.ID {
+			continue
+		}
+		wg.Add(1)
+		go deleteReplica(replica.ID)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for e := range errs {
+		err = errors.Join(err, e)
+	}
+
+	return err
+}
+
 // deleteSnapshots removes all the share snapshots
 func (b *FSStore) deleteSnapshots(logWithFields *logrus.Entry, shareID string) error {
 	listOpts := snapshots.ListOpts{
@@ -590,6 +695,12 @@ func (b *FSStore) deleteClone(cloneID string) error {
 
 	// cascade deletion of the share dependent resources
 	if cloneID != "" && b.cascadeDelete {
+		if ok, _ := utils.CompareMicroversions("lte", replicasMicroversion, b.client.Microversion); ok {
+			err := b.deleteReplicas(logWithFields, cloneID)
+			if err != nil {
+				return fmt.Errorf("failed to delete %s share replicas: %w", cloneID, err)
+			}
+		}
 		err := b.deleteSnapshots(logWithFields, cloneID)
 		if err != nil {
 			return fmt.Errorf("failed to delete %s share snapshots: %w", cloneID, err)
@@ -677,6 +788,130 @@ func (b *FSStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID stri
 	return &unstructured.Unstructured{Object: res}, nil
 }
 
+func (b *FSStore) changeAZ(logWithFields *logrus.Entry, shareID, az string) error {
+	// detect current share replica
+	replica, oldReplica, err := b.findOrCreateShareReplica(logWithFields, shareID, az)
+	if err != nil {
+		return fmt.Errorf("failed to obtain a replica for a %q share: %w", shareID, err)
+	}
+
+	// resync replica in a new AZ
+	logWithFields.Infof("resyncing %s replica to a new availability zone", replica.ID)
+	err = replicas.Resync(b.client, replica.ID).ExtractErr()
+	if err != nil {
+		return fmt.Errorf("failed to resync a %q share replica: %w", replica.ID, err)
+	}
+	_, err = b.waitForReplicaState(replica.ID, replicaInSyncStates, b.replicaTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to wait for a %q share replica state: %w", replica.ID, err)
+	}
+
+	// promote replica in a new AZ
+	logWithFields.Infof("promoting %s replica to a new availability zone", replica.ID)
+	err = replicas.Promote(b.client, replica.ID, replicas.PromoteOpts{}).ExtractErr()
+	if err != nil {
+		return fmt.Errorf("failed to promote a %q share replica: %w", replica.ID, err)
+	}
+	logWithFields.Infof("waiting for %s replica to be active in a new availability zone", replica.ID)
+	_, err = b.waitForReplicaState(replica.ID, replicaActiveStates, b.replicaTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to wait for a %q share replica state: %w", replica.ID, err)
+	}
+
+	// checking the expected share AZ
+	logWithFields.Infof("waiting for %s share to be available in a new availability zone", shareID)
+	newShare, err := b.waitForShareStatus(shareID, shareStatuses, b.shareTimeout)
+	if err != nil {
+		return fmt.Errorf("failed to wait for a share: %w", err)
+	}
+	if newShare.AvailabilityZone != az {
+		return fmt.Errorf("the expected share availability zone was not set")
+	}
+
+	// remove old replica
+	if oldReplica != nil {
+		if b.ensureDeleted {
+			logWithFields.Infof("waiting for an old replica %s in %s availability zone to be deleted", oldReplica.ID, oldReplica.AvailabilityZone)
+			return b.ensureReplicaDeleted(logWithFields, oldReplica.ID, b.replicaTimeout)
+		}
+		err = replicas.Delete(b.client, oldReplica.ID).ExtractErr()
+		if err != nil {
+			return fmt.Errorf("failed to delete an old %q replica: %w", oldReplica.ID, err)
+		}
+	}
+
+	return nil
+}
+
+// findOrCreateShareReplica returns the new or existing inactive replica as the
+// first return value and old active replica as the second one
+func (b *FSStore) findOrCreateShareReplica(logWithFields *logrus.Entry, shareID, az string) (*replicas.Replica, *replicas.Replica, error) {
+	curReplica, allReplicas, err := b.findShareActiveReplica(logWithFields, shareID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if curReplica != nil && curReplica.AvailabilityZone == az {
+		// current share replica is already in the desired availability zone
+		logWithFields.Infof("current active %s replica is already %s in the expected availability zone", curReplica.ID, curReplica.State)
+		return curReplica, nil, nil
+	}
+
+	// check whether there is an existing replica in the destination AZ
+	for _, v := range allReplicas {
+		if v.AvailabilityZone == az && utils.SliceContains(replicaStatuses, v.Status) {
+			// found an existing replica in the destination AZ
+			logWithFields.Infof("found %s replica with a %s state in the expected availability zone", v.ID, v.State)
+			return &v, curReplica, nil
+		}
+	}
+
+	// create replica in a new AZ
+	logWithFields.Infof("creating a new replica in the expected availability zone")
+	replicaOpts := &replicas.CreateOpts{
+		ShareID:          shareID,
+		AvailabilityZone: az,
+	}
+	replica, err := replicas.Create(b.client, replicaOpts).Extract()
+	if err != nil {
+		return nil, curReplica, fmt.Errorf("failed to create a new replica for a %q share: %w", shareID, err)
+	}
+	logWithFields.Infof("waiting for a new %s replica to be available", replica.ID)
+	replica, err = b.waitForReplicaStatus(replica.ID, replicaStatuses, b.replicaTimeout)
+	if err != nil {
+		return nil, curReplica, fmt.Errorf("failed to wait for a %q share replica status: %w", replica.ID, err)
+	}
+
+	return replica, curReplica, nil
+}
+
+// findShareActiveReplica returns the current active replica if found and the list
+// of all replicas associated with a share.
+func (b *FSStore) findShareActiveReplica(logWithFields *logrus.Entry, shareID string) (*replicas.Replica, []replicas.Replica, error) {
+	listOpts := replicas.ListOpts{
+		ShareID: shareID,
+	}
+	pages, err := replicas.ListDetail(b.client, listOpts).AllPages()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to list %s share replicas: %w", shareID, err)
+	}
+	allReplicas, err := replicas.ExtractReplicas(pages)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to extract %s share replicas: %w", shareID, err)
+	}
+	if len(allReplicas) == 0 {
+		return nil, nil, fmt.Errorf("failed to find a replica for a %q share", shareID)
+	}
+	for _, v := range allReplicas {
+		if utils.SliceContains(replicaStatuses, v.Status) && utils.SliceContains(replicaActiveStates, v.State) {
+			return &v, allReplicas, nil
+		}
+	}
+
+	logWithFields.Infof("failed to find an active share replica")
+
+	return nil, allReplicas, nil
+}
+
 func (b *FSStore) getShareAccessRule(logWithFields *logrus.Entry, volumeID string) (*shares.AccessRight, error) {
 	var rules interface{}
 	var err error
@@ -742,6 +977,26 @@ func (b *FSStore) waitForSnapshotStatus(id string, statuses []string, secs int) 
 	})
 }
 
+func (b *FSStore) waitForReplicaStatus(id string, statuses []string, secs int) (current *replicas.Replica, err error) {
+	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
+		current, err = replicas.Get(b.client, id).Extract()
+		if err != nil {
+			return "", err
+		}
+		return current.Status, nil
+	})
+}
+
+func (b *FSStore) waitForReplicaState(id string, states []string, secs int) (current *replicas.Replica, err error) {
+	return current, utils.WaitForStatus(states, secs, func() (string, error) {
+		current, err := replicas.Get(b.client, id).Extract()
+		if err != nil {
+			return "", err
+		}
+		return current.State, nil
+	})
+}
+
 func (b *FSStore) ensureShareDeleted(logWithFields *logrus.Entry, id string, secs int) error {
 	deleteFunc := func() error {
 		err := shares.Delete(b.client, id).ExtractErr()
@@ -795,6 +1050,36 @@ func (b *FSStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id string, 
 		err := snapshots.ResetStatus(b.client, id, opts).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to reset a %s snapshot status: %v", id, err)
+		}
+		return err
+	}
+
+	return utils.EnsureDeleted(deleteFunc, checkFunc, resetFunc, secs, b.ensureDeletedDelay)
+}
+
+func (b *FSStore) ensureReplicaDeleted(logWithFields *logrus.Entry, id string, secs int) error {
+	deleteFunc := func() error {
+		err := replicas.Delete(b.client, id).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to delete a %s replica: %v", id, err)
+		}
+		return err
+	}
+	checkFunc := func() error {
+		_, err := b.waitForReplicaStatus(id, []string{"deleted"}, secs)
+		if err != nil {
+			logWithFields.Infof("failed to wait for a %s replica status: %v", id, err)
+		}
+		return err
+	}
+	resetFunc := func() error {
+		logWithFields.Infof("resetting a %s replica status and trying again", id)
+		opts := &replicas.ResetStatusOpts{
+			Status: "error",
+		}
+		err := replicas.ResetStatus(b.client, id, opts).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to reset a %s replica: %v", id, err)
 		}
 		return err
 	}
