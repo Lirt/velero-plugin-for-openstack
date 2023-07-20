@@ -237,21 +237,25 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 		return share.ID, fmt.Errorf("share %v didn't get into 'available' status within the time limit: %w", share.ID, err)
 	}
 
-	// grant the only one supported share access from the original share
-	accessOpts := &shares.GrantAccessOpts{
-		AccessType:  rule.AccessType,
-		AccessTo:    rule.AccessTo,
-		AccessLevel: rule.AccessLevel,
-	}
-	shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
-	if err != nil {
-		logWithFields.Error("failed to grant an access to manila share")
-		return share.ID, fmt.Errorf("failed to grant an access to manila share %v: %w", share.ID, err)
+	var shareAccessID string
+	if rule != nil {
+		// grant the only one supported share access from the original share
+		accessOpts := &shares.GrantAccessOpts{
+			AccessType:  rule.AccessType,
+			AccessTo:    rule.AccessTo,
+			AccessLevel: rule.AccessLevel,
+		}
+		shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
+		if err != nil {
+			logWithFields.Error("failed to grant an access to manila share")
+			return share.ID, fmt.Errorf("failed to grant an access to manila share %v: %w", share.ID, err)
+		}
+		shareAccessID = shareAccess.ID
 	}
 
 	logWithFields.WithFields(logrus.Fields{
 		"shareID":       share.ID,
-		"shareAccessID": shareAccess.ID,
+		"shareAccessID": shareAccessID,
 	}).Info("Backup share was created")
 	return share.ID, nil
 }
@@ -369,19 +373,22 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 		return share.ID, "", fmt.Errorf("share clone %v didn't get into 'available' status within the time limit: %w", share.ID, err)
 	}
 
-	// grant the only one supported share access from the original share
-	accessOpts := &shares.GrantAccessOpts{
-		AccessType:  rule.AccessType,
-		AccessTo:    rule.AccessTo,
-		AccessLevel: rule.AccessLevel,
-	}
-	shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
-	if err != nil {
-		logWithFields.Error("failed to grant an access to manila share clone")
-		return share.ID, "", fmt.Errorf("failed to grant an access to manila share clone %v: %w", share.ID, err)
+	if rule != nil {
+		// grant the only one supported share access from the original share
+		accessOpts := &shares.GrantAccessOpts{
+			AccessType:  rule.AccessType,
+			AccessTo:    rule.AccessTo,
+			AccessLevel: rule.AccessLevel,
+		}
+		shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
+		if err != nil {
+			logWithFields.Error("failed to grant an access to manila share clone")
+			return share.ID, "", fmt.Errorf("failed to grant an access to manila share clone %v: %w", share.ID, err)
+		}
+		return share.ID, shareAccess.ID, nil
 	}
 
-	return share.ID, shareAccess.ID, nil
+	return share.ID, "", nil
 }
 
 // GetVolumeInfo returns type of the specified volume in the given availability zone.
@@ -658,7 +665,9 @@ func (b *FSStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID stri
 
 	pv.Spec.CSI.VolumeHandle = volumeID
 	pv.Spec.CSI.VolumeAttributes["shareID"] = volumeID
-	pv.Spec.CSI.VolumeAttributes["shareAccessID"] = rule.ID
+	if rule != nil {
+		pv.Spec.CSI.VolumeAttributes["shareAccessID"] = rule.ID
+	}
 
 	res, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pv)
 	if err != nil {
@@ -701,8 +710,8 @@ func (b *FSStore) getShareAccessRule(logWithFields *logrus.Entry, volumeID strin
 		}
 	}
 
-	logWithFields.Errorf("failed to find share %v access rules from manila", volumeID)
-	return nil, fmt.Errorf("failed to find share %v access rules from manila: %w", volumeID, err)
+	logWithFields.Infof("cannot find share %v access rules from manila", volumeID)
+	return nil, nil
 }
 
 func (b *FSStore) getManilaMicroversion() (string, error) {
