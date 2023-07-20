@@ -288,6 +288,7 @@ configuration:
       # allowing the source volume to be deleted (EXPERIMENTAL)
       # * "image" is for a full volume backup uploaded to a Glance image
       # allowing the source volume to be deleted (EXPERIMENTAL)
+      # requires the "enable_force_upload" Cinder option to be enabled on the server
       method: clone
       # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
       # (default: 5m)

@@ -581,6 +581,7 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 	}
 
 	opts := &backups.CreateOpts{
+		Name:        backupName,
 		VolumeID:    volumeID,
 		Description: "Velero volume backup",
 		Container:   backupName,
