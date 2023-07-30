@@ -1,9 +1,11 @@
 package cinder
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
 	"github.com/gophercloud/gophercloud"
@@ -25,6 +27,7 @@ const (
 	defaultTimeout           = "5m"
 	volumeBackupMicroversion = "3.47"
 	volumeImageMicroversion  = "3.1"
+	defaultDeleteDelay       = "10s"
 )
 
 var (
@@ -82,16 +85,19 @@ var (
 
 // BlockStore is a plugin for containing state for the Cinder Block Storage
 type BlockStore struct {
-	client          *gophercloud.ServiceClient
-	imgClient       *gophercloud.ServiceClient
-	provider        *gophercloud.ProviderClient
-	config          map[string]string
-	volumeTimeout   int
-	snapshotTimeout int
-	cloneTimeout    int
-	backupTimeout   int
-	imageTimeout    int
-	log             logrus.FieldLogger
+	client             *gophercloud.ServiceClient
+	imgClient          *gophercloud.ServiceClient
+	provider           *gophercloud.ProviderClient
+	config             map[string]string
+	volumeTimeout      int
+	snapshotTimeout    int
+	cloneTimeout       int
+	backupTimeout      int
+	imageTimeout       int
+	ensureDeleted      bool
+	ensureDeletedDelay int
+	cascadeDelete      bool
+	log                logrus.FieldLogger
 }
 
 // NewBlockStore instantiates a Cinder Volume Snapshotter.
@@ -137,6 +143,19 @@ func (b *BlockStore) Init(config map[string]string) error {
 	b.imageTimeout, err = utils.DurationToSeconds(utils.GetConf(b.config, "imageTimeout", defaultTimeout))
 	if err != nil {
 		return fmt.Errorf("cannot parse time from imageTimeout config variable: %w", err)
+	}
+	// parse options
+	b.ensureDeleted, err = strconv.ParseBool(utils.GetConf(b.config, "ensureDeleted", "false"))
+	if err != nil {
+		return fmt.Errorf("cannot parse ensureDeleted config variable: %w", err)
+	}
+	b.ensureDeletedDelay, err = utils.DurationToSeconds(utils.GetConf(b.config, "ensureDeletedDelay", defaultDeleteDelay))
+	if err != nil {
+		return fmt.Errorf("cannot parse time from ensureDeletedDelay config variable: %w", err)
+	}
+	b.cascadeDelete, err = strconv.ParseBool(utils.GetConf(b.config, "cascadeDelete", "false"))
+	if err != nil {
+		return fmt.Errorf("cannot parse cascadeDelete config variable: %w", err)
 	}
 
 	// Authenticate to OpenStack
@@ -263,7 +282,7 @@ func (b *BlockStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -285,15 +304,15 @@ func (b *BlockStore) createVolumeFromClone(cloneID, volumeType, volumeAZ string)
 
 	volumeName := fmt.Sprintf("%s.backup.%s", cloneID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	volumeDesc := "Velero backup from volume clone"
-	volume, err := b.cloneVolume(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
+	volumeID, err := b.cloneVolume(logWithFields, cloneID, volumeName, volumeDesc, volumeAZ, nil)
 	if err != nil {
-		return "", err
+		return volumeID, err
 	}
 
 	logWithFields.WithFields(logrus.Fields{
-		"volumeID": volume.ID,
+		"volumeID": volumeID,
 	}).Info("Backup volume was created")
-	return volume.ID, nil
+	return volumeID, nil
 }
 
 func (b *BlockStore) createVolumeFromBackup(backupID, volumeType, volumeAZ string) (string, error) {
@@ -340,7 +359,7 @@ func (b *BlockStore) createVolumeFromBackup(backupID, volumeType, volumeAZ strin
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -391,7 +410,7 @@ func (b *BlockStore) createVolumeFromImage(imageID, volumeType, volumeAZ string)
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -400,14 +419,14 @@ func (b *BlockStore) createVolumeFromImage(imageID, volumeType, volumeAZ string)
 	return volume.ID, nil
 }
 
-func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeName, volumeDesc, volumeAZ string, tags map[string]string) (*volumes.Volume, error) {
+func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeName, volumeDesc, volumeAZ string, tags map[string]string) (string, error) {
 	// Make sure source volume clone is in ready state
 	logWithFields.Info("Waiting for source volume clone to be in 'available' state")
 
 	originVolume, err := b.waitForVolumeStatus(volumeID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("source volume clone didn't get into 'available' state within the time limit")
-		return nil, fmt.Errorf("source volume clone %v didn't get into 'available' state within the time limit: %w", volumeID, err)
+		return "", fmt.Errorf("source volume clone %v didn't get into 'available' state within the time limit: %w", volumeID, err)
 	}
 	logWithFields.Info("Source volume is in 'available' state")
 
@@ -425,16 +444,16 @@ func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeNa
 	volume, err := volumes.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from volume clone")
-		return nil, fmt.Errorf("failed to create volume %v from volume clone %v: %w", volumeName, volumeID, err)
+		return "", fmt.Errorf("failed to create volume %v from volume clone %v: %w", volumeName, volumeID, err)
 	}
 
 	_, err = b.waitForVolumeStatus(volume.ID, volumeStatuses, b.volumeTimeout)
 	if err != nil {
 		logWithFields.Error("volume didn't get into 'available' state within the time limit")
-		return nil, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
+		return volume.ID, fmt.Errorf("volume %v didn't get into 'available' state within the time limit: %w", volume.ID, err)
 	}
 
-	return volume, nil
+	return volume.ID, nil
 }
 
 // GetVolumeInfo returns type of the specified volume in the given availability zone.
@@ -528,7 +547,7 @@ func (b *BlockStore) createSnapshot(volumeID, volumeAZ string, tags map[string]s
 	_, err = b.waitForSnapshotStatus(snapshot.ID, snapshotStatuses, b.snapshotTimeout)
 	if err != nil {
 		logWithFields.Error("snapshot didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshot.ID, err)
+		return snapshot.ID, fmt.Errorf("snapshot %v didn't get into 'available' state within the time limit: %w", snapshot.ID, err)
 	}
 	logWithFields.Info("Snapshot is in 'available' state")
 
@@ -551,15 +570,15 @@ func (b *BlockStore) createClone(volumeID, volumeAZ string, tags map[string]stri
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
 	cloneDesc := "Velero volume clone"
-	clone, err := b.cloneVolume(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
+	cloneID, err := b.cloneVolume(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
 	if err != nil {
-		return "", err
+		return cloneID, err
 	}
 
 	logWithFields.WithFields(logrus.Fields{
-		"cloneID": clone.ID,
+		"cloneID": cloneID,
 	}).Info("Volume clone finished successfuly")
-	return clone.ID, nil
+	return cloneID, nil
 }
 
 func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]string) (string, error) {
@@ -597,7 +616,7 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 	_, err = b.waitForBackupStatus(backup.ID, backupStatuses, b.backupTimeout)
 	if err != nil {
 		logWithFields.Error("backup didn't get into 'available' state within the time limit")
-		return "", fmt.Errorf("backup %v didn't get into 'available' state within the time limit: %w", backup.ID, err)
+		return backup.ID, fmt.Errorf("backup %v didn't get into 'available' state within the time limit: %w", backup.ID, err)
 	}
 	logWithFields.Info("Volume backup is in 'available' state")
 
@@ -643,7 +662,7 @@ func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]stri
 	_, err = b.waitForImageStatus(image.ImageID, imageStatuses, b.imageTimeout)
 	if err != nil {
 		logWithFields.Error("image didn't get into 'active' state within the time limit")
-		return "", fmt.Errorf("image %v didn't get into 'active' state within the time limit: %w", image.ImageID, err)
+		return image.ImageID, fmt.Errorf("image %v didn't get into 'active' state within the time limit: %w", image.ImageID, err)
 	}
 	logWithFields.Info("Volume image is in 'active' state")
 
@@ -651,7 +670,7 @@ func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]stri
 	_, err = images.Update(b.imgClient, image.ImageID, updateProperties).Extract()
 	if err != nil {
 		logWithFields.Error("failed to update image properties")
-		return "", fmt.Errorf("failed to update image properties: %w", err)
+		return image.ImageID, fmt.Errorf("failed to update image properties: %w", err)
 	}
 
 	logWithFields.WithFields(logrus.Fields{
@@ -682,6 +701,11 @@ func (b *BlockStore) deleteSnapshot(snapshotID string) error {
 	logWithFields.Info("BlockStore.DeleteSnapshot called")
 
 	// Delete snapshot from Cinder
+	if b.ensureDeleted {
+		logWithFields.Infof("waiting for a %s snapshot to be deleted", snapshotID)
+		return b.ensureSnapshotDeleted(logWithFields, snapshotID, b.snapshotTimeout)
+	}
+
 	err := snapshots.Delete(b.client, snapshotID).ExtractErr()
 	if err != nil {
 		if _, ok := err.(gophercloud.ErrDefault404); ok {
@@ -695,6 +719,47 @@ func (b *BlockStore) deleteSnapshot(snapshotID string) error {
 	return nil
 }
 
+// deleteSnapshots removes all the volume snapshots
+func (b *BlockStore) deleteSnapshots(logWithFields *logrus.Entry, volumeID string) error {
+	listOpts := snapshots.ListOpts{
+		VolumeID: volumeID,
+	}
+	pages, err := snapshots.List(b.client, listOpts).AllPages()
+	if err != nil {
+		return fmt.Errorf("failed to list %s volume snapshots: %w", volumeID, err)
+	}
+	allSnapshots, err := snapshots.ExtractSnapshots(pages)
+	if err != nil {
+		return fmt.Errorf("failed to extract %s volume snapshots: %w", volumeID, err)
+	}
+
+	wg := sync.WaitGroup{}
+	errs := make(chan error, len(allSnapshots))
+	deleteSnapshot := func(snapshotID string) {
+		logWithFields.Infof("deleting the %s snapshot", snapshotID)
+		err := b.ensureSnapshotDeleted(logWithFields, snapshotID, b.snapshotTimeout)
+		if err != nil {
+			logWithFields.Errorf("failed to delete %s volume snapshot: %v", snapshotID, err)
+			errs <- fmt.Errorf("failed to delete %s volume snapshot: %w", snapshotID, err)
+		}
+		wg.Done()
+	}
+
+	for _, snapshot := range allSnapshots {
+		wg.Add(1)
+		go deleteSnapshot(snapshot.ID)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for e := range errs {
+		err = errors.Join(err, e)
+	}
+
+	return err
+}
+
 func (b *BlockStore) deleteClone(cloneID string) error {
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"cloneID": cloneID,
@@ -702,7 +767,20 @@ func (b *BlockStore) deleteClone(cloneID string) error {
 	})
 	logWithFields.Info("BlockStore.DeleteSnapshot called")
 
+	// cascade deletion of the volume dependent resources
+	if cloneID != "" && b.cascadeDelete {
+		err := b.deleteSnapshots(logWithFields, cloneID)
+		if err != nil {
+			return fmt.Errorf("failed to delete %s volume snapshots: %w", cloneID, err)
+		}
+	}
+
 	// Delete volume clone from Cinder
+	if b.ensureDeleted {
+		logWithFields.Infof("waiting for a %s clone volume to be deleted", cloneID)
+		return b.ensureVolumeDeleted(logWithFields, cloneID, b.cloneTimeout)
+	}
+
 	err := volumes.Delete(b.client, cloneID, nil).ExtractErr()
 	if err != nil {
 		if _, ok := err.(gophercloud.ErrDefault404); ok {
@@ -724,6 +802,11 @@ func (b *BlockStore) deleteBackup(backupID string) error {
 	logWithFields.Info("BlockStore.DeleteSnapshot called")
 
 	// Delete volume backup from Cinder
+	if b.ensureDeleted {
+		logWithFields.Infof("waiting for a %s volume backup deleted", backupID)
+		return b.ensureBackupDeleted(logWithFields, backupID, b.backupTimeout)
+	}
+
 	err := backups.Delete(b.client, backupID).ExtractErr()
 	if err != nil {
 		if _, ok := err.(gophercloud.ErrDefault404); ok {
@@ -847,63 +930,133 @@ func (b *BlockStore) setCinderMicroversion(version string) error {
 }
 
 func (b *BlockStore) waitForVolumeStatus(id string, statuses []string, secs int) (current *volumes.Volume, err error) {
-	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
 		current, err = volumes.Get(b.client, id).Extract()
 		if err != nil {
-			return false, err
+			return "", err
 		}
-
-		if utils.SliceContains(statuses, current.Status) {
-			return true, nil
-		}
-
-		return false, nil
+		return current.Status, nil
 	})
 }
 
 func (b *BlockStore) waitForSnapshotStatus(id string, statuses []string, secs int) (current *snapshots.Snapshot, err error) {
-	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
 		current, err = snapshots.Get(b.client, id).Extract()
 		if err != nil {
-			return false, err
+			return "", err
 		}
-
-		if utils.SliceContains(statuses, current.Status) {
-			return true, nil
-		}
-
-		return false, nil
+		return current.Status, nil
 	})
 }
 
 func (b *BlockStore) waitForBackupStatus(id string, statuses []string, secs int) (current *backups.Backup, err error) {
-	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
 		current, err = backups.Get(b.client, id).Extract()
 		if err != nil {
-			return false, err
+			return "", err
 		}
-
-		if utils.SliceContains(statuses, current.Status) {
-			return true, nil
-		}
-
-		return false, nil
+		return current.Status, nil
 	})
 }
 
 func (b *BlockStore) waitForImageStatus(id string, statuses []string, secs int) (current *images.Image, err error) {
-	return current, gophercloud.WaitFor(secs, func() (bool, error) {
+	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
 		current, err = images.Get(b.imgClient, id).Extract()
 		if err != nil {
-			return false, err
+			return "", err
 		}
-
-		if utils.SliceContains(statuses, string(current.Status)) {
-			return true, nil
-		}
-
-		return false, nil
+		return string(current.Status), nil
 	})
+}
+
+func (b *BlockStore) ensureVolumeDeleted(logWithFields *logrus.Entry, id string, secs int) error {
+	deleteFunc := func() error {
+		err := volumes.Delete(b.client, id, nil).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to delete a %s volume: %v", id, err)
+		}
+		return err
+	}
+	checkFunc := func() error {
+		_, err := b.waitForVolumeStatus(id, []string{"deleted"}, secs)
+		if err != nil {
+			logWithFields.Infof("failed to wait for a %s volume status: %v", id, err)
+		}
+		return err
+	}
+	resetFunc := func() error {
+		logWithFields.Infof("resetting a %s volume status and trying again", id)
+		opts := &volumeactions.ResetStatusOpts{
+			Status: "error",
+		}
+		err := volumeactions.ResetStatus(b.client, id, opts).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to reset a %s volume status: %v", id, err)
+		}
+		return err
+	}
+
+	return utils.EnsureDeleted(deleteFunc, checkFunc, resetFunc, secs, b.ensureDeletedDelay)
+}
+
+func (b *BlockStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id string, secs int) error {
+	deleteFunc := func() error {
+		err := snapshots.Delete(b.client, id).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to delete a %s snapshot: %v", id, err)
+		}
+		return err
+	}
+	checkFunc := func() error {
+		_, err := b.waitForSnapshotStatus(id, []string{"deleted"}, secs)
+		if err != nil {
+			logWithFields.Infof("failed to wait for a %s snapshot status: %v", id, err)
+		}
+		return err
+	}
+	resetFunc := func() error {
+		logWithFields.Infof("resetting a %s snapshot status and trying again", id)
+		opts := &snapshots.ResetStatusOpts{
+			Status: "error",
+		}
+		err := snapshots.ResetStatus(b.client, id, opts).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to reset a %s snapshot status: %v", id, err)
+		}
+		return err
+	}
+
+	return utils.EnsureDeleted(deleteFunc, checkFunc, resetFunc, secs, b.ensureDeletedDelay)
+}
+
+func (b *BlockStore) ensureBackupDeleted(logWithFields *logrus.Entry, id string, secs int) error {
+	deleteFunc := func() error {
+		err := backups.Delete(b.client, id).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to delete a %s backup: %v", id, err)
+		}
+		return err
+	}
+	checkFunc := func() error {
+		_, err := b.waitForBackupStatus(id, []string{"deleted"}, secs)
+		if err != nil {
+			logWithFields.Infof("failed to wait for a %s backup status: %v", id, err)
+		}
+		return err
+	}
+	resetFunc := func() error {
+		logWithFields.Infof("resetting a %s backup status and trying again", id)
+		opts := &backups.ResetStatusOpts{
+			Status: "error",
+		}
+		err := backups.ResetStatus(b.client, id, opts).ExtractErr()
+		if err != nil {
+			logWithFields.Infof("failed to reset a %s backup status: %v", id, err)
+		}
+		return err
+	}
+
+	return utils.EnsureDeleted(deleteFunc, checkFunc, resetFunc, secs, b.ensureDeletedDelay)
 }
 
 func expandVolumeProperties(log logrus.FieldLogger, volume *volumes.Volume) images.UpdateOpts {
