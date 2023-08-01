@@ -5,12 +5,12 @@ go 1.20
 require (
 	github.com/gophercloud/gophercloud v1.5.1-0.20230728133231-6e4dbe89f68c
 	github.com/gophercloud/utils v0.0.0-20220927104426-4113af8d2663
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.8.1
-	github.com/vmware-tanzu/velero v1.11.0
-	k8s.io/api v0.25.6
-	k8s.io/apimachinery v0.25.6
+	github.com/stretchr/testify v1.8.4
+	github.com/vmware-tanzu/velero v1.11.1
+	k8s.io/api v0.25.12
+	k8s.io/apimachinery v0.25.12
 )
 
 require (
@@ -45,11 +45,11 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/cobra v1.4.0 // indirect
-	golang.org/x/net v0.7.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220608161450-d0670ef3b1eb // indirect
 	golang.org/x/sys v0.10.0 // indirect
-	golang.org/x/term v0.5.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/term v0.6.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220324131243-acbaeb5b85eb // indirect
