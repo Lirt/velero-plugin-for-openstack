@@ -1,6 +1,6 @@
 # Velero Plugin for OpenStack
 
-OpenStack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
+OpenStack Cinder, Manila and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
 This plugin is [included as community supported plugin by Velero organization](https://velero.io/plugins/).
 
@@ -26,8 +26,8 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
+| v0.6.x         | 1.9.x, 1.10.x 1.11.x |
 | v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x 1.11.x |
-| v0.4.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
 
 ## OpenStack Authentication Configuration
 
@@ -85,7 +85,7 @@ export OS_SWIFT_TEMP_URL_KEY=secret-key
 export OS_SWIFT_ENDPOINT_OVERRIDE=http://my-local/v1/swift
 ```
 
-If your OpenStack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder:
+If your OpenStack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder and Manila:
 
 ```bash
 # Swift with SwiftStack
@@ -187,7 +187,7 @@ spec:
 
 ## Installation
 
-### Container Setup
+### Swift Container Setup
 
 Swift container must have [Temporary URL Key](https://docs.openstack.org/swift/latest/api/temporary_url_middleware.html) configured to make it possible to download Velero backups. In your Swift project you can execute following command to configure it:
 
@@ -213,15 +213,13 @@ Initialize velero plugin:
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.5.2 \
+       --plugins lirt/velero-plugin-for-openstack:v0.6.0 \
        --bucket <SWIFT_CONTAINER_NAME> \
        --no-secret
 
 # Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.5.2
+velero plugin add lirt/velero-plugin-for-openstack:v0.6.0
 ```
-
-Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.5.2-arm64`.
 
 Change configuration of `backupstoragelocations.velero.io`:
 
@@ -230,7 +228,6 @@ spec:
   objectStorage:
     bucket: <CONTAINER_NAME>
   provider: community.openstack.org/openstack
-  # # Optional config
   # config:
   #   cloud: cloud1
   #   region: fra
@@ -239,16 +236,78 @@ spec:
   #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
 ```
 
-Change configuration of `volumesnapshotlocations.velero.io`:
+For backups of Cinder volumes create configuration of `volumesnapshotlocations.velero.io`:
 
 ```yaml
 spec:
   provider: community.openstack.org/openstack-cinder
-  # optional config
   # config:
-  #   cloud: cloud1
-  #   region: fra
+  #   # optional snapshot method:
+  #   # * "snapshot" is a default cinder snapshot method
+  #   # * "clone" is for a full volume clone instead of a snapshot allowing the
+  #   # source volume to be deleted
+  #   # * "backup" is for a full volume backup uploaded to a Cinder backup
+  #   # allowing the source volume to be deleted (EXPERIMENTAL)
+  #   # * "image" is for a full volume backup uploaded to a Glance image
+  #   # allowing the source volume to be deleted (EXPERIMENTAL)
+  #   # requires the "enable_force_upload" Cinder option to be enabled on the server
+  #   method: clone
+  #   # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
+  #   # (default: 5m)
+  #   volumeTimeout: 5m
+  #   snapshotTimeout: 5m
+  #   cloneTimeout: 5m
+  #   backupTimeout: 5m
+  #   imageTimeout: 5m
+  #   # ensures that the Cinder volume/snapshot is removed
+  #   # if an original snapshot volume was marked to be deleted, the volume may
+  #   # end up in "error_deleting" status.
+  #   # if the volume/snapshot is in "error_deleting" status, the plugin will try to reset
+  #   # its status (usually extra admin permissions are required) and delete it again
+  #   # within the defined "snapshotTimeout" or "cloneTimeout"
+  #   ensureDeleted: "true"
+  #   # a delay to wait between delete/reset actions when "ensureDeleted" is enabled
+  #   ensureDeletedDelay: 10s
+  #   # deletes all dependent volume resources (i.e. snapshots) before deleting
+  #   # the clone volume (works only, when a snapshot method is set to clone)
+  #   cascadeDelete: "true"
 ```
+
+For backups of Manila shares create configuration of `volumesnapshotlocations.velero.io`:
+```yaml
+spec:
+  provider: community.openstack.org/openstack-manila
+  # config:
+  #   # optional snapshot method:
+  #   # * "snapshot" is a default manila snapshot method
+  #   # * "clone" is for a full share clone instead of a snapshot allowing the
+  #   # source share to be deleted
+  #   method: clone
+  #   # optional Manila CSI driver name (default: nfs.manila.csi.openstack.org)
+  #   driver: ceph.manila.csi.openstack.org
+  #   # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
+  #   # (default: 5m)
+  #   shareTimeout: 5m
+  #   snapshotTimeout: 5m
+  #   cloneTimeout: 5m
+  #   replicaTimeout: 5m
+  #   # ensures that the Manila share/snapshot/replica is removed
+  #   # this is a workaround to the https://bugs.launchpad.net/manila/+bug/2025641 and
+  #   # https://bugs.launchpad.net/manila/+bug/1960239 bugs
+  #   # if the share/snapshot/replica is in "error_deleting" status, the plugin will try
+  #   # to reset its status (usually extra admin permissions are required) and delete it
+  #   # again within the defined "cloneTimeout", "snapshotTimeout" or "replicaTimeout"
+  #   ensureDeleted: "true"
+  #   # a delay to wait between delete/reset actions when "ensureDeleted" is enabled
+  #   ensureDeletedDelay: 10s
+  #   # deletes all dependent share resources (i.e. snapshots, replicas) before deleting
+  #   # the clone share (works only, when a snapshot method is set to clone)
+  #   cascadeDelete: "true"
+  #   # enforces availability zone checks when the availability zone of a
+  #   # snapshot/share differs from the Velero metadata
+  #   enforceAZ: "true"
+```
+
 
 ### Install Using Helm Chart
 
@@ -343,7 +402,7 @@ configuration:
       enforceAZ: "true"
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.5.2
+  image: lirt/velero-plugin-for-openstack:v0.6.0
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
@@ -374,7 +433,7 @@ helm upgrade \
 
 Please note two things regarding volume backups:
 1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent.
-2. Snapshots in the cinder backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder backend creates durable snapshots with your cloud provider.
+2. Snapshots in the cinder or manila backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder or manila backend creates durable snapshots with your cloud provider.
 
 ### Native VolumeSnapshots
 
@@ -404,8 +463,8 @@ go build
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.5.2 \
-              --build-arg VERSION=v0.5.2 \
+              --tag lirt/velero-plugin-for-openstack:v0.6.0 \
+              --build-arg VERSION=v0.6.0 \
               --build-arg GIT_SHA=somesha \
               --no-cache \
               --push \
