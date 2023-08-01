@@ -106,17 +106,33 @@ swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}" my-container
 
 ## Volume Backups
 
+### Backup Methods
+
+Plugin supports multiple methods of creating a backup. Availability of those methods also depend on whether you are going to backup Cinder volume or Manila share.
+
+Cinder backup methods:
+- **Snapshot** - Create a snapshot using Cinder.
+- **Clone** - Clone a volume using Cinder.
+- **Backup** - Create a backup using Cinder backup functionality (known in CLI as `cinder backup create`) - see [docs](https://docs.openstack.org/cinder/latest/admin/volume-backups.html).
+- **Image** - Upload a volume into Glance image service.
+
+Manila methods:
+- **Snapshot** - Create a snapshot using Manila.
+- **Clone** - Create a snapshot using Manila, but immediatelly create a volume from this snapshot and afterwards cleanup original snapshot.
+
+### Consistency and Durability
+
 Please note two things regarding volume backups:
-1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent.
-2. Snapshots in the cinder or manila backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder or manila backend creates durable snapshots with your cloud provider.
+1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent!
+2. Durability of backups in the cinder or manila backend depend on backup method that you will use. In most cases for proper availability, the snapshot need to be backed up to off-site storage (to survive real datacenter incident). Please consult if chosen backup method and your cinder or manila backend setup will result in durable backups with your cloud provider.
 
 ### Native VolumeSnapshots
 
-Alternative Kubernetes native solution (GA since 1.20) for volume snapshots (not backups) are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
+Alternative Kubernetes native solution (GA since 1.20) for volume snapshots are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
 
 ### Restic
 
-Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/). Please understand that this repository does not provide any functionality for restic and restic implementation is done purely in Velero code.
+Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/). Please understand that this repository does not provide any functionality for restic and restic implementation is done purely in Velero code!
 
 There is a common similarity that `restic` can use OpenStack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
 
