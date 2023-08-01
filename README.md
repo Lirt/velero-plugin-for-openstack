@@ -125,9 +125,9 @@ Manila methods:
 
 ### Consistency and Durability
 
-Please note two things regarding volume backups:
+Please note two facts regarding volume backups:
 1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent!
-2. Durability of backups in the cinder or manila backend depend on backup method that you will use. In most cases for proper availability, the snapshot need to be backed up to off-site storage (to survive real datacenter incident). Please consult if chosen backup method and your cinder or manila backend setup will result in durable backups with your cloud provider.
+2. Durability of backups in the cinder or manila backend depend on backup method that you will use. In most cases for proper availability, the snapshot need to be backed up to off-site storage (in order to survive real datacenter incident). Please consult if chosen backup method and your cinder or manila backend setup will result in durable backups with your cloud provider.
 
 ### Native VolumeSnapshots
 
@@ -135,7 +135,7 @@ Alternative Kubernetes native solution (GA since 1.20) for volume snapshots are 
 
 ### Restic
 
-Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/). Please understand that this repository does not provide any functionality for restic and restic implementation is done purely in Velero code!
+Volume backups with Velero can also be done using [Restic and Kopia](https://velero.io/docs/main/file-system-backup/). Please understand that this repository does not provide any functionality for restic and kopia and their implementation is done purely in Velero code!
 
 There is a common similarity that `restic` can use OpenStack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
 
