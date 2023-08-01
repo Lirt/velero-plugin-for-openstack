@@ -12,9 +12,12 @@ This plugin is [included as community supported plugin by Velero organization](h
   - [Installation](#installation)
     - [Swift Container Setup](#swift-container-setup)
   - [Volume Backups](#volume-backups)
+    - [Backup Methods](#backup-methods)
+    - [Consistency and Durability](#consistency-and-durability)
+    - [Native VolumeSnapshots](#native-volumesnapshots)
+    - [Restic](#restic)
   - [Known Issues](#known-issues)
-  - [Build](#build)
-  - [Test](#test)
+  - [Test & Build](#test--build)
   - [Development](#development)
 
 ## Compatibility
@@ -108,7 +111,7 @@ swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}" my-container
 
 ### Backup Methods
 
-Plugin supports multiple methods of creating a backup. Availability of those methods also depend on whether you are going to backup Cinder volume or Manila share.
+Plugin supports multiple methods of creating a backup.
 
 Cinder backup methods:
 - **Snapshot** - Create a snapshot using Cinder.
