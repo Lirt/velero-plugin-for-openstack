@@ -5,12 +5,12 @@ go 1.20
 require (
 	github.com/gophercloud/gophercloud v1.5.1-0.20230728133231-6e4dbe89f68c
 	github.com/gophercloud/utils v0.0.0-20220927104426-4113af8d2663
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.8.1
-	github.com/vmware-tanzu/velero v1.11.0
-	k8s.io/api v0.25.6
-	k8s.io/apimachinery v0.25.6
+	github.com/stretchr/testify v1.8.4
+	github.com/vmware-tanzu/velero v1.11.1
+	k8s.io/api v0.25.12
+	k8s.io/apimachinery v0.25.12
 )
 
 require (
