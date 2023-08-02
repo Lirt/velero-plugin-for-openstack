@@ -1,6 +1,6 @@
 # Velero Plugin for OpenStack
 
-OpenStack Cinder and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
+OpenStack Cinder, Manila and Swift plugin for [velero](https://github.com/vmware-tanzu/velero/) backups.
 
 This plugin is [included as community supported plugin by Velero organization](https://velero.io/plugins/).
 
@@ -9,15 +9,15 @@ This plugin is [included as community supported plugin by Velero organization](h
 - [Velero Plugin for OpenStack](#velero-plugin-for-openstack)
   - [Compatibility](#compatibility)
   - [OpenStack Authentication Configuration](#openstack-authentication-configuration)
-    - [Authentication using environment variables](#authentication-using-environment-variables)
-    - [Authentication using file](#authentication-using-file)
   - [Installation](#installation)
-    - [Install using Velero CLI](#install-using-velero-cli)
-    - [Install Using Helm Chart](#install-using-helm-chart)
+    - [Swift Container Setup](#swift-container-setup)
   - [Volume Backups](#volume-backups)
+    - [Backup Methods](#backup-methods)
+    - [Consistency and Durability](#consistency-and-durability)
+    - [Native VolumeSnapshots](#native-volumesnapshots)
+    - [Restic](#restic)
   - [Known Issues](#known-issues)
-  - [Build](#build)
-  - [Test](#test)
+  - [Test & Build](#test--build)
   - [Development](#development)
 
 ## Compatibility
@@ -26,8 +26,8 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
+| v0.6.x         | 1.9.x, 1.10.x 1.11.x |
 | v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x 1.11.x |
-| v0.4.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x |
 
 ## OpenStack Authentication Configuration
 
@@ -39,117 +39,15 @@ The order of authentication methods is following:
   1. Look for file in `~/.config/openstack/clouds.y(a)ml`.
   1. Look for file in `/etc/openstack/clouds.y(a)ml`.
 
-For authentication using application credentials you need to first create them using openstack CLI command such as `openstack application credential create <NAME>`.
+For authentication using application credentials you first need to create credentials using openstack CLI command such as `openstack application credential create <NAME>`.
 
-### Authentication using Environment Variables
+For more information about how to configure authentication, see one of following documents:
+1. [Authentication using Environment Variables](docs/authentication-env.md)
+1. [Authentication using Files](docs/authentication-file.md)
 
-Configure velero container with your OpenStack authentication environment variables:
+Both authentication options also allow you to authenticate against multiple OpenStack Clouds at the same time. The way you can leverage this functionality is scenario where you want to store backups in 2 different locations. This scenario doesn't apply for Volume Snapshots as they always need to be created in the same cloud and region as where your PVCs are created!
 
-```bash
-# Keystone v2.0
-export OS_AUTH_URL=<AUTH_URL /v2.0>
-export OS_USERNAME=<USERNAME>
-export OS_PASSWORD=<PASSWORD>
-export OS_REGION_NAME=<REGION>
-
-# Keystone v3
-export OS_AUTH_URL=<AUTH_URL /v3>
-export OS_PASSWORD=<PASSWORD>
-export OS_USERNAME=<USERNAME>
-export OS_PROJECT_ID=<PROJECT_ID>
-export OS_PROJECT_NAME=<PROJECT_NAME>
-export OS_REGION_NAME=<REGION_NAME>
-export OS_DOMAIN_NAME=<DOMAIN_NAME OR OS_USER_DOMAIN_NAME>
-
-# Keystone v3 with Authentication Credentials
-export OS_AUTH_URL=<AUTH_URL /v3>
-export OS_APPLICATION_CREDENTIAL_ID=<APP_CRED_ID>
-export OS_APPLICATION_CREDENTIAL_NAME=<APP_CRED_NAME>
-export OS_APPLICATION_CREDENTIAL_SECRET=<APP_CRED_SECRET>
-
-# If you want to test with unsecure certificates
-export OS_VERIFY="false"
-export TLS_SKIP_VERIFY="true"
-
-# A custom hash function to use for Temp URL generation
-export OS_SWIFT_TEMP_URL_DIGEST=sha256
-# If you want to override Swift account ID
-export OS_SWIFT_ACCOUNT_OVERRIDE=<NEW_PROJECT_ID>
-# In case if you have non-standard reseller prefixes
-export OS_SWIFT_RESELLER_PREFIXES=AUTH_,SERVICE_
-# A valid Temp URL key must be specified, when overriding the Swift account ID
-export OS_SWIFT_TEMP_URL_KEY=secret-key
-
-# If you want to completely override Swift endpoint URL
-# Has a higher priority over the OS_SWIFT_ACCOUNT_OVERRIDE
-export OS_SWIFT_ENDPOINT_OVERRIDE=http://my-local/v1/swift
-```
-
-If your OpenStack cloud has separated Swift service (SwiftStack or different), you can specify special environment variables for Swift to authenticate it and keep the standard ones for Cinder:
-
-```bash
-# Swift with SwiftStack
-export OS_SWIFT_AUTH_URL=<AUTH_URL /v2.0>
-export OS_SWIFT_PASSWORD=<PASSWORD>
-export OS_SWIFT_PROJECT_ID=<PROJECT_ID>
-export OS_SWIFT_REGION_NAME=<REGION_NAME>
-export OS_SWIFT_TENANT_NAME=<TENANT_NAME>
-export OS_SWIFT_USERNAME=<USERNAME>
-```
-
-This option does not support using multiple clouds (or BSLs) for backups.
-
-### Authentication using file
-
-You can also authenticate using file in [`clouds.y(a)ml` format](https://docs.openstack.org/python-openstackclient/pike/configuration/index.html#clouds-yaml).
-
-Easiest way is to create file `/etc/openstack/clouds.y(a)ml` with content like this:
-
-```yaml
-clouds:
-  <CLOUD_NAME_1>:
-    region_name: <REGION_NAME>
-    auth:
-      auth_url: "<AUTH_URL /v3>"
-      username: <USERNAME>
-      password: <PASSWORD>
-      project_name: <PROJECT_NAME>
-      project_domain_name: <PROJECT_DOMAIN_NAME>
-      user_domain_name: <USER_DOMAIN_NAME>
-  <CLOUD_NAME_2>:
-    region_name: <REGION_NAME>
-    auth:
-      auth_url: "<AUTH_URL /v3>"
-      username: <USERNAME>
-      password: <PASSWORD>
-      project_name: <PROJECT_NAME>
-      project_domain_name: <PROJECT_DOMAIN_NAME>
-      user_domain_name: <USER_DOMAIN_NAME>
-```
-
-Or when authenticating using [Application Credentials](https://docs.openstack.org/keystone/queens/user/application_credentials.html#using-application-credentials) use file content like this:
-
-```yaml
-clouds:
-  <CLOUD_NAME_1>:
-    region_name: <REGION_NAME>
-    auth:
-      auth_url: "<AUTH_URL /v3>"
-      application_credential_name: <APPLICATION_CREDENTIAL_NAME>
-      application_credential_id: <APPLICATION_CREDENTIAL_ID>
-      application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
-  <CLOUD_NAME_2>:
-    region_name: <REGION_NAME>
-    auth:
-      auth_url: "<AUTH_URL /v3>"
-      application_credential_name: <APPLICATION_CREDENTIAL_NAME>
-      application_credential_id: <APPLICATION_CREDENTIAL_ID>
-      application_credential_secret: <APPLICATION_CREDENTIAL_SECRET>
-```
-
-These 2 options allow you also to authenticate against multiple OpenStack Clouds at the same time. The way you can leverage this functionality is scenario where you want to store backups in 2 different locations. This scenario doesn't apply for Volume Snapshots as they always need to be created in the same cloud and region as where your PVCs are created!
-
-Example of BSLs:
+Example of multi-cloud BSL setup:
 ```yaml
 ---
 apiVersion: velero.io/v1
@@ -187,7 +85,11 @@ spec:
 
 ## Installation
 
-### Container Setup
+There are 2 options how to install this plugin. Each method has a documentation subpage:
+1. [Installation using CLI](docs/installation-using-cli.md)
+1. [Installation using Helm](docs/installation-using-helm.md)
+
+### Swift Container Setup
 
 Swift container must have [Temporary URL Key](https://docs.openstack.org/swift/latest/api/temporary_url_middleware.html) configured to make it possible to download Velero backups. In your Swift project you can execute following command to configure it:
 
@@ -205,184 +107,35 @@ swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}" my-container
 
 > **Note:** If the Swift account ID is overridden (for example, if the current authentication project scope does not correspond to the destination container project ID), you must set the corresponding valid `OS_SWIFT_TEMP_URL_KEY` environment variable.
 
-### Install using Velero CLI
-
-Initialize velero plugin:
-
-```bash
-# Initialize velero from scratch:
-velero install \
-       --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.5.2 \
-       --bucket <SWIFT_CONTAINER_NAME> \
-       --no-secret
-
-# Or add plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.5.2
-```
-
-Note: If you want to use plugin built for `arm` or `arm64` architecture, you can use tag such as this `lirt/velero-plugin-for-openstack:v0.5.2-arm64`.
-
-Change configuration of `backupstoragelocations.velero.io`:
-
-```yaml
-spec:
-  objectStorage:
-    bucket: <CONTAINER_NAME>
-  provider: community.openstack.org/openstack
-  # # Optional config
-  # config:
-  #   cloud: cloud1
-  #   region: fra
-  #   # If you want to enable restic you need to set resticRepoPrefix to this value:
-  #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
-  #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
-```
-
-Change configuration of `volumesnapshotlocations.velero.io`:
-
-```yaml
-spec:
-  provider: community.openstack.org/openstack-cinder
-  # optional config
-  # config:
-  #   cloud: cloud1
-  #   region: fra
-```
-
-### Install Using Helm Chart
-
-Alternative installation can be done using Helm Charts.
-
-There is an [official helm chart for Velero](https://github.com/vmware-tanzu/helm-charts/) which can be used to install both velero and velero openstack plugin.
-
-To use it, first create `values.yaml` file which will later be used in helm installation (here is just minimal necessary configuration):
-
-```yaml
----
-credentials:
-  extraSecretRef: "velero-credentials"
-configuration:
-  backupStorageLocation:
-  - name: swift
-    provider: community.openstack.org/openstack
-    bucket: my-swift-container
-    # caCert: <CERT_CONTENTS_IN_BASE64>
-    # # Optional config
-    # config:
-    #   cloud: cloud1
-    #   region: fra
-    #   # If you want to enable restic you need to set resticRepoPrefix to this value:
-    #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
-    #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
-  volumeSnapshotLocation:
-  # for Cinder block storage
-  - name: cinder
-    provider: community.openstack.org/openstack-cinder
-    config:
-      # optional snapshot method:
-      # * "snapshot" is a default cinder snapshot method
-      # * "clone" is for a full volume clone instead of a snapshot allowing the
-      # source volume to be deleted
-      # * "backup" is for a full volume backup uploaded to a Cinder backup
-      # allowing the source volume to be deleted (EXPERIMENTAL)
-      # * "image" is for a full volume backup uploaded to a Glance image
-      # allowing the source volume to be deleted (EXPERIMENTAL)
-      # requires the "enable_force_upload" Cinder option to be enabled on the server
-      method: clone
-      # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
-      # (default: 5m)
-      volumeTimeout: 5m
-      snapshotTimeout: 5m
-      cloneTimeout: 5m
-      backupTimeout: 5m
-      imageTimeout: 5m
-      # ensures that the Cinder volume/snapshot is removed
-      # if an original snapshot volume was marked to be deleted, the volume may
-      # end up in "error_deleting" status.
-      # if the volume/snapshot is in "error_deleting" status, the plugin will try to reset
-      # its status (usually extra admin permissions are required) and delete it again
-      # within the defined "snapshotTimeout" or "cloneTimeout"
-      ensureDeleted: "true"
-      # a delay to wait between delete/reset actions when "ensureDeleted" is enabled
-      ensureDeletedDelay: 10s
-      # deletes all dependent volume resources (i.e. snapshots) before deleting
-      # the clone volume (works only, when a snapshot method is set to clone)
-      cascadeDelete: "true"
-  # for Manila shared filesystem storage
-  - name: manila
-    provider: community.openstack.org/openstack-manila
-    config:
-      # optional snapshot method:
-      # * "snapshot" is a default manila snapshot method
-      # * "clone" is for a full share clone instead of a snapshot allowing the
-      # source share to be deleted
-      method: clone
-      # optional Manila CSI driver name (default: nfs.manila.csi.openstack.org)
-      driver: ceph.manila.csi.openstack.org
-      # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
-      # (default: 5m)
-      shareTimeout: 5m
-      snapshotTimeout: 5m
-      cloneTimeout: 5m
-      replicaTimeout: 5m
-      # ensures that the Manila share/snapshot/replica is removed
-      # this is a workaround to the https://bugs.launchpad.net/manila/+bug/2025641 and
-      # https://bugs.launchpad.net/manila/+bug/1960239 bugs
-      # if the share/snapshot/replica is in "error_deleting" status, the plugin will try
-      # to reset its status (usually extra admin permissions are required) and delete it
-      # again within the defined "cloneTimeout", "snapshotTimeout" or "replicaTimeout"
-      ensureDeleted: "true"
-      # a delay to wait between delete/reset actions when "ensureDeleted" is enabled
-      ensureDeletedDelay: 10s
-      # deletes all dependent share resources (i.e. snapshots, replicas) before deleting
-      # the clone share (works only, when a snapshot method is set to clone)
-      cascadeDelete: "true"
-      # enforces availability zone checks when the availability zone of a
-      # snapshot/share differs from the Velero metadata
-      enforceAZ: "true"
-initContainers:
-- name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.5.2
-  imagePullPolicy: IfNotPresent
-  volumeMounts:
-    - mountPath: /target
-      name: plugins
-snapshotsEnabled: true
-backupsEnabled: true
-# Optionally enable restic
-# deployRestic: true
-```
-
-Make sure that secret `velero-credentials` exists and has proper format and content.
-
-Then install `velero` using command like this:
-
-```bash
-helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
-helm repo update
-helm upgrade \
-     velero \
-     vmware-tanzu/velero \
-     --install \
-     --namespace velero \
-     --values values.yaml \
-     --version 4.0.1
-```
-
 ## Volume Backups
 
-Please note two things regarding volume backups:
-1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent.
-2. Snapshots in the cinder backend are not always supposed to be used as durable. In some cases for proper availability, the snapshot need to be backed up to off-site storage. Please consult if your cinder backend creates durable snapshots with your cloud provider.
+### Backup Methods
+
+Plugin supports multiple methods of creating a backup.
+
+Cinder backup methods:
+- **Snapshot** - Create a snapshot using Cinder.
+- **Clone** - Clone a volume using Cinder.
+- **Backup** - Create a backup using Cinder backup functionality (known in CLI as `cinder backup create`) - see [docs](https://docs.openstack.org/cinder/latest/admin/volume-backups.html).
+- **Image** - Upload a volume into Glance image service (requires `enable_force_upload` Cinder option enabled on the server side).
+
+Manila backup methods:
+- **Snapshot** - Create a snapshot using Manila.
+- **Clone** - Create a snapshot using Manila, but immediatelly create a volume from this snapshot and afterwards cleanup original snapshot.
+
+### Consistency and Durability
+
+Please note two facts regarding volume backups:
+1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent!
+2. Durability of backups in the Cinder or Manila backend depends on backup method that you will use. In most cases for proper availability, the snapshot needs to be backed up to off-site storage (in order to survive real datacenter incident). Please consult if chosen backup method and your Cinder or Manila backend setup will result in durable backups with your cloud provider.
 
 ### Native VolumeSnapshots
 
-Alternative Kubernetes native solution (GA since 1.20) for volume snapshots (not backups) are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
+Alternative Kubernetes native solution (GA since 1.20) for volume snapshots are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
 
 ### Restic
 
-Volume backups with Velero can also be done using [Restic](https://velero.io/docs/main/restic/). Please understand that this repository does not provide any functionality for restic and restic implementation is done purely in Velero code.
+Volume backups with Velero can also be done using [Restic and Kopia](https://velero.io/docs/main/file-system-backup/). Please understand that this repository does not provide any functionality for restic and kopia and their implementation is done purely in Velero code!
 
 There is a common similarity that `restic` can use OpenStack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
 
@@ -404,8 +157,8 @@ go build
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.5.2 \
-              --build-arg VERSION=v0.5.2 \
+              --tag lirt/velero-plugin-for-openstack:v0.6.0 \
+              --build-arg VERSION=v0.6.0 \
               --build-arg GIT_SHA=somesha \
               --no-cache \
               --push \
