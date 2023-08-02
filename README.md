@@ -117,9 +117,9 @@ Cinder backup methods:
 - **Snapshot** - Create a snapshot using Cinder.
 - **Clone** - Clone a volume using Cinder.
 - **Backup** - Create a backup using Cinder backup functionality (known in CLI as `cinder backup create`) - see [docs](https://docs.openstack.org/cinder/latest/admin/volume-backups.html).
-- **Image** - Upload a volume into Glance image service.
+- **Image** - Upload a volume into Glance image service (requires `enable_force_upload` Cinder option enabled on the server side).
 
-Manila methods:
+Manila backup methods:
 - **Snapshot** - Create a snapshot using Manila.
 - **Clone** - Create a snapshot using Manila, but immediatelly create a volume from this snapshot and afterwards cleanup original snapshot.
 
@@ -127,7 +127,7 @@ Manila methods:
 
 Please note two facts regarding volume backups:
 1. The snapshots are done using flag `--force`. The reason is that volumes in state `in-use` cannot be snapshotted without it (they would need to be detached in advance). In some cases this can make snapshot contents inconsistent!
-2. Durability of backups in the cinder or manila backend depend on backup method that you will use. In most cases for proper availability, the snapshot need to be backed up to off-site storage (in order to survive real datacenter incident). Please consult if chosen backup method and your cinder or manila backend setup will result in durable backups with your cloud provider.
+2. Durability of backups in the Cinder or Manila backend depends on backup method that you will use. In most cases for proper availability, the snapshot needs to be backed up to off-site storage (in order to survive real datacenter incident). Please consult if chosen backup method and your Cinder or Manila backend setup will result in durable backups with your cloud provider.
 
 ### Native VolumeSnapshots
 

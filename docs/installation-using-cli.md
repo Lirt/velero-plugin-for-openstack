@@ -55,7 +55,7 @@ spec:
     # * "image" is for a full volume backup uploaded to a Glance image
     # allowing the source volume to be deleted (EXPERIMENTAL)
     # requires the "enable_force_upload" Cinder option to be enabled on the server
-    method: clone
+    method: snapshot
     # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
     # (default: 5m)
     volumeTimeout: 5m
@@ -93,7 +93,7 @@ spec:
     # * "snapshot" is a default manila snapshot method
     # * "clone" is for a full share clone instead of a snapshot allowing the
     # source share to be deleted
-    method: clone
+    method: snapshot
     # optional Manila CSI driver name (default: nfs.manila.csi.openstack.org)
     driver: ceph.manila.csi.openstack.org
     # optional resource readiness timeouts in Golang time format: https://pkg.go.dev/time#ParseDuration
