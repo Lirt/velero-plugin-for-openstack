@@ -94,14 +94,14 @@ There are 2 options how to install this plugin. Each method has a documentation 
 Swift container must have [Temporary URL Key](https://docs.openstack.org/swift/latest/api/temporary_url_middleware.html) configured to make it possible to download Velero backups. In your Swift project you can execute following command to configure it:
 
 ```bash
-SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
+SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | LC_ALL=C tr -dc A-Za-z0-9 | head -c 40)
 swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
 ```
 
 Or per container Temporary URL key:
 
 ```bash
-SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
+SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | LC_ALL=C tr -dc A-Za-z0-9 | head -c 40)
 swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}" my-container
 ```
 
