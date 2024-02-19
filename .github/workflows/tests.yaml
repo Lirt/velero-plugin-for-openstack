@@ -4,15 +4,15 @@ on: [pull_request]
 jobs:
   lint:
     name: "Linters (go v${{ matrix.go-version }})"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         go-version: [ '1.20' ]
     steps:
       - name: Checkout velero-plugin-for-openstack
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Check formatting
@@ -30,15 +30,15 @@ jobs:
   unit-test:
     name: "Unit tests (go v${{ matrix.go-version }})"
     needs: lint
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         go-version: [ '1.20' ]
     steps:
       - name: Checkout velero-plugin-for-openstack
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Run unit tests
@@ -47,7 +47,7 @@ jobs:
   integration-test:
     name: "Integration tests (go v${{ matrix.go-version }})"
     needs: unit-test
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         go-version: [ '1.20' ]
@@ -57,19 +57,19 @@ jobs:
       VELERO_CHART_VERSION: 4.0.1
       VELERO_RESTORE_NAME: my-test-restore-01
       VELERO_BACKUP_NAME: my-test-backup-01
-      # From tag 1.25.0
-      CINDER_CSI_CHART_VERSION: 2.2.0
-      MANILA_CSI_CHART_VERSION: 2.2.0
+      # From tag 1.27.x
+      CINDER_CSI_CHART_VERSION: 2.27.3
+      MANILA_CSI_CHART_VERSION: 2.27.3
       DOCKER_IMAGE_NAME: velero-plugin-for-openstack
       SWIFT_CONTAINER_NAME: my-swift-container
       TESTS_DIRECTORY: tests/actions/integration-tests
     steps:
       - name: Checkout velero-plugin-for-openstack
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Build Docker image
@@ -83,10 +83,10 @@ jobs:
                  --load \
                  .
       - name: Install Kind
-        uses: helm/kind-action@v1.4.0
+        uses: helm/kind-action@v1.9.0
         with:
-          # Kubernetes 1.25.x
-          version: v0.16.0
+          # Kubernetes 1.27.x
+          version: v0.20.0
           cluster_name: kind
           wait: 120s
       - name: Load new velero-plugin-for-openstack image to kind cluster
@@ -95,7 +95,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v3
         with:
-          version: 'v3.10.3'
+          version: 'v3.14.1'
       - name: Install Velero CLI
         run: |
           wget --quiet "https://github.com/vmware-tanzu/velero/releases/download/v${VELERO_CLI_VERSION}/velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
@@ -103,9 +103,9 @@ jobs:
           sudo mv "velero-v${VELERO_CLI_VERSION}-linux-amd64/velero" /usr/local/bin/velero
           chmod 750 /usr/local/bin/velero
       - name: Deploy DevStack
-        uses: EmilienM/devstack-action@v0.11
+        uses: EmilienM/devstack-action@v0.14
         with:
-          branch: 'stable/yoga'
+          branch: 'stable/2023.2'
           enable_workaround_docker_io: 'false'
           conf_overrides: |
             SWIFT_ENABLE_TEMPURLS=True
@@ -117,7 +117,7 @@ jobs:
 
             CINDER_ISCSI_HELPER=tgtadm
 
-            enable_plugin manila https://github.com/openstack/manila stable/yoga
+            enable_plugin manila https://github.com/openstack/manila stable/2023.2
             # LVM Backend config options
             MANILA_SERVICE_IMAGE_ENABLED=False
             SHARE_DRIVER=manila.share.drivers.lvm.LVMShareDriver
