@@ -135,6 +135,7 @@ jobs:
       - name: Prepare Swift container for velero backups
         run: |
           source "${{ github.workspace }}/devstack/openrc"
+          source "/opt/stack/data/venv/bin/activate"
           SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
           swift post "${SWIFT_CONTAINER_NAME}"
           swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
