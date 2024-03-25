@@ -153,6 +153,7 @@ jobs:
                --version "${VELERO_CHART_VERSION}" \
                --values "${TESTS_DIRECTORY}/velero-helm-values.yaml" \
                --set "initContainers[0].image=${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+               --set "upgradeCRDs=false" \
                --timeout 10m \
                --wait \
                --wait-for-jobs
