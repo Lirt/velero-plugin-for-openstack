@@ -97,6 +97,7 @@ type BlockStore struct {
 	ensureDeleted      bool
 	ensureDeletedDelay int
 	cascadeDelete      bool
+	containerName      string
 	log                logrus.FieldLogger
 }
 
@@ -157,6 +158,9 @@ func (b *BlockStore) Init(config map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("cannot parse cascadeDelete config variable: %w", err)
 	}
+
+	// load optional containerName
+	b.containerName = utils.GetConf(b.config, "containerName", "")
 
 	// Authenticate to OpenStack
 	err = utils.Authenticate(&b.provider, "cinder", config, b.log)
@@ -607,6 +611,12 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 		Metadata:    utils.Merge(originVolume.Metadata, tags),
 		Force:       true,
 	}
+
+	// Override container if one was passed by the user
+	if b.containerName != "" {
+		opts.Container = b.containerName
+	}
+
 	backup, err := backups.Create(b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create backup from volume")
