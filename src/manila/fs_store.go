@@ -154,7 +154,7 @@ func (b *FSStore) Init(config map[string]string) error {
 			if config["region"] != "" {
 				region = config["region"]
 			} else {
-				region = "RegionOne"
+				region = ""
 			}
 		}
 		b.client, err = openstack.NewSharedFileSystemV2(b.provider, gophercloud.EndpointOpts{

@@ -46,6 +46,14 @@ metadata:
 spec:
   provider: community.openstack.org/openstack-cinder
   config:
+    # optional Cloud:
+    #   in case clouds.yaml is used as authentication method, cloud allows
+    #   user to select which cloud from the clouds.yaml to use for volume backups
+    cloud: "myCloud"
+    # optional Region:
+    #   in case multiple regions exist in a single cloud, select which region
+    #   will be used for backups.
+    region: "myRegion"
     # optional snapshot method:
     # * "snapshot" is a default cinder snapshot method
     # * "clone" is for a full volume clone instead of a snapshot allowing the
@@ -89,6 +97,14 @@ metadata:
 spec:
   provider: community.openstack.org/openstack-manila
   config:
+    # optional Cloud:
+    #   in case clouds.yaml is used as authentication method, cloud allows
+    #   user to select which cloud from the clouds.yaml to use for volume backups
+    cloud: "myCloud"
+    # optional Region:
+    #   in case multiple regions exist in a single cloud, select which region
+    #   will be used for backups.
+    region: "myRegion"
     # optional snapshot method:
     # * "snapshot" is a default manila snapshot method
     # * "clone" is for a full share clone instead of a snapshot allowing the
