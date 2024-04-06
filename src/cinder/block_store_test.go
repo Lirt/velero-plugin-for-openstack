@@ -145,6 +145,11 @@ const tokenResp = `{
     }
 }`
 
+// TestInit performs standard block store initialization
+// which includes creation of auth client, authentication and
+// creation of block storage client.
+// In this test we use simple clouds.yaml and don't override
+// any option.
 func TestInit(t *testing.T) {
 	// Basic structs
 	log := logrus.New()
