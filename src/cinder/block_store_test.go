@@ -36,8 +36,8 @@ const tokenResp = `{
                         "url": "http://localhost:35357"
                     }
                 ],
-                "id": "854d03ceed4611ee82b09cb6d0fbac9d", 
-                "type": "identity", 
+                "id": "854d03ceed4611ee82b09cb6d0fbac9d",
+                "type": "identity",
                 "name": "keystone"
             },
             {
@@ -106,10 +106,10 @@ const tokenResp = `{
         "project": {
             "domain": {
                 "id": "8789d1",
-                "name": "example.com"
+                "name": "domain"
             },
-            "id": "263fa9",
-            "name": "project-y"
+            "id": "04982538-f42b-11ee-a412-9cb6d0fbac9d",
+            "name": "project"
         },
         "roles": [
             {
@@ -121,25 +121,13 @@ const tokenResp = `{
                 "name": "member"
             }
         ],
-        "service_providers": [
-            {
-                "auth_url":"https://example.com:5000/v3/OS-FEDERATION/identity_providers/acme/protocols/saml2/auth",
-                "id": "sp1",
-                "sp_url": "https://example.com:5000/Shibboleth.sso/SAML2/ECP"
-            },
-            {
-                "auth_url":"https://other.example.com:5000/v3/OS-FEDERATION/identity_providers/acme/protocols/saml2/auth",
-                "id": "sp2",
-                "sp_url": "https://other.example.com:5000/Shibboleth.sso/SAML2/ECP"
-            }
-        ],
         "user": {
             "domain": {
                 "id": "8789d1",
-                "name": "example.com"
+                "name": "domain"
             },
-            "id": "0ca8f6",
-            "name": "Jane",
+            "id": "cf78e694-f42a-11ee-bfcc-9cb6d0fbac9d",
+            "name": "user",
             "password_expires_at": "2026-11-06T15:32:17.000000"
         }
     }
@@ -148,9 +136,9 @@ const tokenResp = `{
 // TestInit performs standard block store initialization
 // which includes creation of auth client, authentication and
 // creation of block storage client.
-// In this test we use simple clouds.yaml and don't override
+// In this test we use simple clouds.yaml and not override
 // any option.
-func TestInit(t *testing.T) {
+func TestSimpleBlockStorageInit(t *testing.T) {
 	// Basic structs
 	log := logrus.New()
 	config := map[string]string{

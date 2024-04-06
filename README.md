@@ -149,7 +149,7 @@ Recommended way of using this plugin with restic is to use authentication with e
 
 ```bash
 # test and build code
-go test -v ./...
+go test -v -count 1 ./...
 go mod tidy
 go build
 

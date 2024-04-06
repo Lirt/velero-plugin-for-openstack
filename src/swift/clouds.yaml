@@ -2,8 +2,8 @@
 clouds:
   myCloud:
     auth:
-      user_domain_name: domain
-      auth_url: http://127.0.0.1:32498/v3
+      user_domain_name: users
+      auth_url: http://127.0.0.1:32500/v3
       username: user
       password: pass
       project_name: project

@@ -34,7 +34,7 @@ configuration:
       cloud: ""
       # optional Region:
       #   in case multiple regions exist in a single cloud, select which region
-      #   will be used for backups.
+      #   will be used for cinder volume backups.
       region: ""
       # optional snapshot method:
       # * "snapshot" is a default cinder snapshot method
@@ -70,12 +70,12 @@ configuration:
     provider: community.openstack.org/openstack-manila
     config:
       # optional Cloud:
-      #   in case clouds.yaml is used as authentication method, cloud allows
-      #   user to select which cloud from the clouds.yaml to use for volume backups
+      #   in case clouds.yaml is used as authentication method, cloud allows user
+      #   to select which cloud from the clouds.yaml to use for manila share backups
       cloud: ""
       # optional Region:
       #   in case multiple regions exist in a single cloud, select which region
-      #   will be used for backups.
+      #   will be used for manila share backups.
       region: ""
       # optional snapshot method:
       # * "snapshot" is a default manila snapshot method
