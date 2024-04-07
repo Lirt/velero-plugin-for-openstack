@@ -1,0 +1,12 @@
+# This file is only to perform unit test with clouds.yaml for which the path cannot be changed
+clouds:
+  myCloud:
+    auth:
+      user_domain_name: domain
+      auth_url: http://127.0.0.1:32498/v3
+      username: user
+      password: pass
+      project_name: project
+      project_domain_name: domain
+    # region_name: myRegion
+    identity_api_version: 3

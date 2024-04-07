@@ -175,7 +175,7 @@ func (b *BlockStore) Init(config map[string]string) error {
 			if config["region"] != "" {
 				region = config["region"]
 			} else {
-				region = "RegionOne"
+				region = ""
 			}
 		}
 		b.client, err = openstack.NewBlockStorageV3(b.provider, gophercloud.EndpointOpts{

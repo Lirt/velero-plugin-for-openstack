@@ -5,6 +5,8 @@
 *.so
 *.dylib
 
+velero-plugin-for-openstack
+
 # Test binary, built with `go test -c`
 *.test
 

@@ -51,7 +51,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 				if config["region"] != "" {
 					region = config["region"]
 				} else {
-					region = "RegionOne"
+					region = ""
 				}
 			}
 		}
