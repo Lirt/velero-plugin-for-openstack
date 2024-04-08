@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.3
 
 # --- First stage
-FROM --platform=$BUILDPLATFORM golang:1.20-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.21-alpine AS build
 
 ARG REPOSITORY=Lirt
 ARG PLUGIN=velero-plugin-for-openstack
