@@ -65,6 +65,11 @@ configuration:
       # deletes all dependent volume resources (i.e. snapshots) before deleting
       # the clone volume (works only, when a snapshot method is set to clone)
       cascadeDelete: "true"
+      # set to true if OpenStack Cinder is configured to use SWIFT as the backup_driver,
+      # otherwise the default container is being used
+      useSwiftVolumeBackup: "false"
+      # Controls which container gets targeted for backups
+      # containerName: "myContainer"
   # for Manila shared filesystem storage
   - name: manila
     provider: community.openstack.org/openstack-manila
