@@ -85,20 +85,21 @@ var (
 
 // BlockStore is a plugin for containing state for the Cinder Block Storage
 type BlockStore struct {
-	client             *gophercloud.ServiceClient
-	imgClient          *gophercloud.ServiceClient
-	provider           *gophercloud.ProviderClient
-	config             map[string]string
-	volumeTimeout      int
-	snapshotTimeout    int
-	cloneTimeout       int
-	backupTimeout      int
-	imageTimeout       int
-	ensureDeleted      bool
-	ensureDeletedDelay int
-	cascadeDelete      bool
-	containerName      string
-	log                logrus.FieldLogger
+	client               *gophercloud.ServiceClient
+	imgClient            *gophercloud.ServiceClient
+	provider             *gophercloud.ProviderClient
+	config               map[string]string
+	volumeTimeout        int
+	snapshotTimeout      int
+	cloneTimeout         int
+	backupTimeout        int
+	imageTimeout         int
+	ensureDeleted        bool
+	ensureDeletedDelay   int
+	cascadeDelete        bool
+	containerName        string
+	useSwiftVolumeBackup bool
+	log                  logrus.FieldLogger
 }
 
 // NewBlockStore instantiates a Cinder Volume Snapshotter.
@@ -157,6 +158,10 @@ func (b *BlockStore) Init(config map[string]string) error {
 	b.cascadeDelete, err = strconv.ParseBool(utils.GetConf(b.config, "cascadeDelete", "false"))
 	if err != nil {
 		return fmt.Errorf("cannot parse cascadeDelete config variable: %w", err)
+	}
+	b.useSwiftVolumeBackup, err = strconv.ParseBool(utils.GetConf(b.config, "useSwiftVolumeBackup", "true"))
+	if err != nil {
+		return fmt.Errorf("cannot parse useSwiftVolumeBackup config variable: %w", err)
 	}
 
 	// load optional containerName
@@ -607,9 +612,15 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 		Name:        backupName,
 		VolumeID:    volumeID,
 		Description: "Velero volume backup",
-		Container:   backupName,
 		Metadata:    utils.Merge(originVolume.Metadata, tags),
 		Force:       true,
+	}
+
+	// Set container only if SWIFT VolumeBackup driver is used
+	// In case of CephRBDDriver the field should be ommited or
+	// set to the rbd_pool that holds all the backups
+	if b.useSwiftVolumeBackup {
+		opts.Container = backupName
 	}
 
 	// Override container if one was passed by the user
