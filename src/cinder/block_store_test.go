@@ -343,7 +343,7 @@ func TestGetVolumeBackups(t *testing.T) {
 
 func TestCreateBackup(t *testing.T) {
 	th.SetupHTTP()
-	defer th.TeardownHTTP() 
+	defer th.TeardownHTTP()
 
 	backupID := "d32019d3-bc6e-4319-9c1d-6722fc136a22"
 	var createRequest *CreateIncrementalBackupRequest
@@ -380,10 +380,18 @@ func TestCreateBackup(t *testing.T) {
 
 	for _, tt := range tests {
 		handleGetVolume(t, tt.volumeID)
-		store.createBackup(tt.volumeID, "default", map[string]string{})
+		createdBackupID, err := store.createBackup(tt.volumeID, "default", map[string]string{})
 
 		if createRequest.Backup.Incremental != tt.expectedIncrementalValue {
 			t.Errorf("expected incremental backup to be set to %v, got %v", tt.expectedIncrementalValue, createRequest.Backup.Incremental)
+		}
+
+		if createdBackupID != backupID {
+			t.Errorf("expected created backup ID to be %v, got %v", backupID, createdBackupID)
+		}
+
+		if !assert.Nil(t, err) {
+			t.FailNow()
 		}
 	}
 }
