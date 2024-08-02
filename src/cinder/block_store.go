@@ -610,10 +610,18 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
 	}
 
-	existingBackup, _, err := b.findLatestBackup(logWithFields, volumeID)
+	existingBackups, err := b.getVolumeBackups(logWithFields, volumeID)
 	if err != nil {
 		logWithFields.Error("failed to retrieve existing volume backups.")
 		return "", fmt.Errorf("failed to retrieve existing backups %v from cinder: %w", volumeID, err)
+	}
+
+	var existingBackup *backups.Backup
+	for _, v := range existingBackups {
+		if v.VolumeID == volumeID && utils.SliceContains(backupStatuses, v.Status) {
+			existingBackup = &v
+			break
+		}
 	}
 
 	opts := &backups.CreateOpts{
@@ -1114,23 +1122,17 @@ func expandVolumeProperties(log logrus.FieldLogger, volume *volumes.Volume) imag
 	return imgAttrUpdateOpts
 }
 
-func (b *BlockStore) findLatestBackup(logWithFields *logrus.Entry, volumeID string) (*backups.Backup, []backups.Backup, error) {
+func (b *BlockStore) getVolumeBackups(logWithFields *logrus.Entry, volumeID string) ([]backups.Backup, error) {
 	// use detail and a non-volumeid search to allow usage of later microversions
-	pages, err := backups.List(b.client, nil).AllPages()
+	pages, err := backups.ListDetail(b.client, nil).AllPages()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list backups: %w", err)
+		return nil, fmt.Errorf("failed to list backups: %w", err)
 	}
+
 	allBackups, err := backups.ExtractBackups(pages)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to extract backups: %w", err)
+		return nil, fmt.Errorf("failed to extract backups: %w", err)
 	}
 
-	for _, v := range allBackups {
-		if v.VolumeID == volumeID && utils.SliceContains(backupStatuses, v.Status) {
-			return &v, allBackups, nil
-		}
-	}
-
-	logWithFields.Infof("not able to find an active backup for volume: %q", volumeID)
-	return nil, allBackups, nil
+	return allBackups, nil
 }
