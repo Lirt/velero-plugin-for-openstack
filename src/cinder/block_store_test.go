@@ -1,6 +1,7 @@
 package cinder
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	th "github.com/gophercloud/gophercloud/testhelper"
 	fakeClient "github.com/gophercloud/gophercloud/testhelper/client"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 const ID = "0123456789"
@@ -132,6 +134,151 @@ const tokenResp = `{
         }
     }
 }`
+const listDetailResponse = `{
+  "backups": [
+    {
+      "id": "289da7f8-6440-407c-9fb4-7db01ec49164",
+      "name": "backup-001",
+      "volume_id": "521752a6-acf6-4b2d-bc7a-119f9148cd8c",
+      "description": "Daily Backup",
+      "status": "available",
+      "size": 30,
+      "created_at": "2017-05-30T03:35:03.000000"
+    },
+    {
+      "id": "96c3bda7-c82a-4f50-be73-ca7621794835",
+      "name": "backup-002",
+      "volume_id": "76b8950a-8594-4e5b-8dce-0dfa9c696358",
+      "description": "Weekly Backup",
+      "status": "available",
+      "size": 25,
+      "created_at": "2017-05-30T03:35:03.000000"
+    }
+  ],
+  "backups_links": [
+    {
+      "href": "%s/backups/detail?marker=1",
+      "rel": "next"
+    }
+  ]
+}
+`
+const createBackupResponse = `{
+    "backup": {
+      "volume_id": "1234",
+      "name": "backup-001",
+      "id": "%s",
+      "description": "Daily backup",
+      "volume_id": "1234",
+      "status": "available",
+      "size": 30,
+      "created_at": "2017-05-30T03:35:03.000000"
+    }
+  }
+`
+const getBackupResponse = `{
+  "backup": {
+      "volume_id": "1234",
+      "name": "backup-001",
+      "id": "%s",
+      "description": "Daily backup",
+      "volume_id": "1234",
+      "status": "available",
+      "size": 30,
+      "created_at": "2017-05-30T03:35:03.000000"
+  }
+}`
+const getVolumeResponse = `{
+    "volume": {
+    "volume_type": "lvmdriver-1",
+    "created_at": "2015-09-17T03:32:29.000000",
+    "bootable": "false",
+    "name": "vol-001",
+    "os-vol-mig-status-attr:name_id": null,
+    "consistencygroup_id": null,
+    "source_volid": null,
+    "os-volume-replication:driver_data": null,
+    "multiattach": false,
+    "snapshot_id": null,
+    "replication_status": "disabled",
+    "os-volume-replication:extended_status": null,
+    "encrypted": false,
+    "availability_zone": "nova",
+    "attachments": [{
+        "server_id": "83ec2e3b-4321-422b-8706-a84185f52a0a",
+        "attachment_id": "05551600-a936-4d4a-ba42-79a037c1-c91a",
+        "attached_at": "2016-08-06T14:48:20.000000",
+        "host_name": "foobar",
+        "volume_id": "%[1]s",
+        "device": "/dev/vdc",
+        "id": "d6cacb1a-8b59-4c88-ad90-d70ebb82bb75"
+    }],
+    "id": "%[1]s",
+    "size": 75,
+    "user_id": "ff1ce52c03ab433aaba9108c2e3ef541",
+    "os-vol-tenant-attr:tenant_id": "304dc00909ac4d0da6c62d816bcb3459",
+    "os-vol-mig-status-attr:migstat": null,
+    "metadata": {},
+    "status": "available",
+    "volume_image_metadata": {
+        "container_format": "bare",
+        "image_name": "centos"
+    },
+    "description": null
+    }
+}`
+
+func handleListBackupsDetail(t *testing.T) {
+	th.Mux.HandleFunc("/backups/detail", func(w http.ResponseWriter, r *http.Request) {
+		th.TestMethod(t, r, "GET")
+		th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
+
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("Failed to parse request form %v", err)
+		}
+		marker := r.Form.Get("marker")
+		switch marker {
+		case "":
+			fmt.Fprintf(w, listDetailResponse, th.Server.URL)
+		case "1":
+			fmt.Fprintf(w, `{"backups": []}`)
+		default:
+			t.Fatalf("Unexpected marker: [%s]", marker)
+		}
+	})
+}
+
+func handleGetVolume(t *testing.T, volumeID string) {
+	th.Mux.HandleFunc(fmt.Sprintf("/volumes/%s", volumeID), func(w http.ResponseWriter, r *http.Request) {
+		th.TestMethod(t, r, "GET")
+		th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
+
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, getVolumeResponse, volumeID, volumeID)
+	})
+}
+
+func handleGetBackup(t *testing.T, backupID string) {
+	th.Mux.HandleFunc(fmt.Sprintf("/backups/%s", backupID), func(w http.ResponseWriter, r *http.Request) {
+		th.TestMethod(t, r, "GET")
+		th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
+
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, getBackupResponse, backupID)
+	})
+}
+
+// CreateIncrementalBackupRequest represents the top-level structure containing the Backup object.
+type CreateIncrementalBackupRequest struct {
+	Backup struct {
+		Incremental bool `json:"incremental"`
+	} `json:"backup"`
+}
 
 // TestInit performs standard block store initialization
 // which includes creation of auth client, authentication and
@@ -167,5 +314,76 @@ func TestSimpleBlockStorageInit(t *testing.T) {
 	// Try to Init block storage. This involves authentication.
 	if err := bs.Init(config); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestGetVolumeBackups(t *testing.T) {
+	th.SetupHTTP()
+	defer th.TeardownHTTP()
+
+	handleListBackupsDetail(t)
+	store := BlockStore{
+		client: fakeClient.ServiceClient(),
+		log:    logrus.New(),
+	}
+
+	volumeID := "76b8950a-8594-4e5b-8dce-0dfa9c696358"
+	logWithFields := store.log.WithFields(logrus.Fields{"volumeId": volumeID})
+	allBackups, err := store.getVolumeBackups(logWithFields, volumeID)
+
+	if !assert.Nil(t, err) {
+		t.FailNow()
+	}
+
+	numOfBackups := len(allBackups)
+	if numOfBackups != 2 {
+		t.Errorf("Expected 2 backups, got %d", numOfBackups)
+	}
+}
+
+func TestCreateBackup(t *testing.T) {
+	th.SetupHTTP()
+	defer th.TeardownHTTP() 
+
+	backupID := "d32019d3-bc6e-4319-9c1d-6722fc136a22"
+	var createRequest *CreateIncrementalBackupRequest
+
+	handleListBackupsDetail(t)
+	handleGetBackup(t, backupID)
+
+	th.Mux.HandleFunc("/backups", func(w http.ResponseWriter, r *http.Request) {
+		// Reset createRequest for each request.
+		createRequest = &CreateIncrementalBackupRequest{}
+
+		th.TestMethod(t, r, "POST")
+		th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
+		json.NewDecoder(r.Body).Decode(&createRequest)
+
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprintf(w, createBackupResponse, backupID)
+	})
+
+	store := BlockStore{
+		client:            fakeClient.ServiceClient(),
+		log:               logrus.New(),
+		backupIncremental: true,
+		backupTimeout:     3,
+	}
+
+	tests := []struct {
+		volumeID                 string
+		expectedIncrementalValue bool
+	}{
+		{"521752a6-acf6-4b2d-bc7a-119f9148cd8c", true},  // volume with existing backups
+		{"591752a6-acf6-4b2d-bc7a-119f9148cd8c", false}, // volume without existing backups
+	}
+
+	for _, tt := range tests {
+		handleGetVolume(t, tt.volumeID)
+		store.createBackup(tt.volumeID, "default", map[string]string{})
+
+		if createRequest.Backup.Incremental != tt.expectedIncrementalValue {
+			t.Errorf("expected incremental backup to be set to %v, got %v", tt.expectedIncrementalValue, createRequest.Backup.Incremental)
+		}
 	}
 }
