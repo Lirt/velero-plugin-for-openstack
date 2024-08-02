@@ -617,9 +617,9 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 	}
 
 	var existingBackup *backups.Backup
-	for _, v := range existingBackups {
-		if v.VolumeID == volumeID && utils.SliceContains(backupStatuses, v.Status) {
-			existingBackup = &v
+	for _, b := range existingBackups {
+		if b.VolumeID == volumeID && utils.SliceContains(backupStatuses, b.Status) {
+			existingBackup = &b
 			break
 		}
 	}
