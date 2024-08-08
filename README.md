@@ -127,7 +127,7 @@ Manila backup methods:
 
 For backup method `backups`, incremental backups are supported. This will however lead to the inability to delete backups in a reverse order, since it is not possible to delete a (older) backup that has dependant (newer) backups. 
 
-**Important: TTL is not working correctly with expiration, so set a large value such as (43800h, approx. 5 years)** since TTL inherently use a `First In, First Out` algorithm, where incremental backups should be deleted on a `Last In, First Out` basis.  
+**Important: TTL is not working correctly with expiration, so set a large value such as (43800h, approx. 5 years)** since TTL inherently use a `First In, First Out` algorithm, where incremental backups should be deleted on a `Last In, First Out` basis. To cleanup these incremental backups, it's suggested to use the Velero CLI to perform deletion on this `Last In, First Out` basis.
 
 Next to that, when incremental backups are enabled, the first backup of a volume will always be a full backup, since this is needed to create increments on.
 
