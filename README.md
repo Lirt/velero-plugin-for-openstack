@@ -119,12 +119,17 @@ Cinder backup methods:
 - **Backup** - Create a backup using Cinder backup functionality (known in CLI as `cinder backup create`) - see [docs](https://docs.openstack.org/cinder/latest/admin/volume-backups.html).
 - **Image** - Upload a volume into Glance image service (requires `enable_force_upload` Cinder option enabled on the server side).
 
-> **Note:** For backups, incremental backups are supported. This will however lead to the inability to delete backups in a reverse order, since it is not possible to delete a (older) backup that has dependant (newer) backups. This state is represented in OpenStack through the `has_dependent_backups` property on a backup. 
-Next to that, the first backup of a volume will always be a full backup, since this is needed to create increments on.
-
 Manila backup methods:
 - **Snapshot** - Create a snapshot using Manila.
 - **Clone** - Create a snapshot using Manila, but immediatelly create a volume from this snapshot and afterwards cleanup original snapshot.
+
+#### Incremental backups
+
+For backup method `backups`, incremental backups are supported. This will however lead to the inability to delete backups in a reverse order, since it is not possible to delete a (older) backup that has dependant (newer) backups. 
+
+**Important: TTL is not working correctly with expiration, so set a large value such as (43800h, approx. 5 years)** since TTL inherently use a `First In, First Out` algorithm, where incremental backups should be deleted on a `Last In, First Out` basis.  
+
+Next to that, when incremental backups are enabled, the first backup of a volume will always be a full backup, since this is needed to create increments on.
 
 ### Consistency and Durability
 
