@@ -4,6 +4,8 @@ OpenStack Cinder, Manila and Swift plugin for [velero](https://github.com/vmware
 
 This plugin is [included as community supported plugin by Velero organization](https://velero.io/plugins/).
 
+Official images are provided from [DockerHub](https://hub.docker.com/r/lirt/velero-plugin-for-openstack/tags).
+
 ## Table of Contents
 
 - [Velero Plugin for OpenStack](#velero-plugin-for-openstack)
