@@ -28,6 +28,8 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
+| v0.8.x         | 1.11.x 1.12.x 1.13.x |
+| v0.7.x         | 1.11.x 1.12.x 1.13.x |
 | v0.6.x         | 1.9.x, 1.10.x 1.11.x |
 | v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x 1.11.x |
 
@@ -127,7 +129,7 @@ Manila backup methods:
 
 #### Incremental backups
 
-For backup method `backups`, incremental backups are supported. This will however lead to the inability to delete backups in a reverse order, since it is not possible to delete a (older) backup that has dependant (newer) backups. 
+For backup method `backups`, incremental backups are supported. This will however lead to the inability to delete backups in a reverse order, since it is not possible to delete a (older) backup that has dependant (newer) backups.
 
 **Important: TTL is not working correctly with expiration, so set a large value such as (43800h, approx. 5 years)** since TTL inherently use a `First In, First Out` algorithm, where incremental backups should be deleted on a `Last In, First Out` basis. To cleanup these incremental backups, it's suggested to use the Velero CLI to perform deletion on this `Last In, First Out` basis.
 
