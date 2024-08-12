@@ -99,6 +99,7 @@ type BlockStore struct {
 	cascadeDelete      bool
 	containerName      string
 	log                logrus.FieldLogger
+	backupIncremental  bool
 }
 
 // NewBlockStore instantiates a Cinder Volume Snapshotter.
@@ -157,6 +158,10 @@ func (b *BlockStore) Init(config map[string]string) error {
 	b.cascadeDelete, err = strconv.ParseBool(utils.GetConf(b.config, "cascadeDelete", "false"))
 	if err != nil {
 		return fmt.Errorf("cannot parse cascadeDelete config variable: %w", err)
+	}
+	b.backupIncremental, err = strconv.ParseBool(utils.GetConf(b.config, "backupIncremental", "false"))
+	if err != nil {
+		return fmt.Errorf("cannot parse backupIncremental config variable: %w", err)
 	}
 
 	// load optional containerName
@@ -321,12 +326,13 @@ func (b *BlockStore) createVolumeFromClone(cloneID, volumeType, volumeAZ string)
 
 func (b *BlockStore) createVolumeFromBackup(backupID, volumeType, volumeAZ string) (string, error) {
 	logWithFields := b.log.WithFields(logrus.Fields{
-		"backupID":      backupID,
-		"volumeType":    volumeType,
-		"volumeAZ":      volumeAZ,
-		"backupTimeout": b.backupTimeout,
-		"volumeTimeout": b.volumeTimeout,
-		"method":        b.config["method"],
+		"backupID":          backupID,
+		"volumeType":        volumeType,
+		"volumeAZ":          volumeAZ,
+		"backupTimeout":     b.backupTimeout,
+		"backupIncremental": b.backupIncremental,
+		"volumeTimeout":     b.volumeTimeout,
+		"method":            b.config["method"],
 	})
 	logWithFields.Info("BlockStore.CreateVolumeFromSnapshot called")
 
@@ -588,12 +594,13 @@ func (b *BlockStore) createClone(volumeID, volumeAZ string, tags map[string]stri
 func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]string) (string, error) {
 	backupName := fmt.Sprintf("%s.backup.%s", volumeID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields := b.log.WithFields(logrus.Fields{
-		"backupName":    backupName,
-		"volumeID":      volumeID,
-		"volumeAZ":      volumeAZ,
-		"tags":          tags,
-		"backupTimeout": b.backupTimeout,
-		"method":        b.config["method"],
+		"backupName":        backupName,
+		"volumeID":          volumeID,
+		"volumeAZ":          volumeAZ,
+		"tags":              tags,
+		"backupTimeout":     b.backupTimeout,
+		"backupIncremental": b.backupIncremental,
+		"method":            b.config["method"],
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
@@ -603,6 +610,20 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
 	}
 
+	existingBackups, err := b.getVolumeBackups(logWithFields, volumeID)
+	if err != nil {
+		logWithFields.Error("failed to retrieve existing volume backups.")
+		return "", fmt.Errorf("failed to retrieve existing backups %v from cinder: %w", volumeID, err)
+	}
+
+	var existingBackup *backups.Backup
+	for _, b := range existingBackups {
+		if b.VolumeID == volumeID && utils.SliceContains(backupStatuses, b.Status) {
+			existingBackup = &b
+			break
+		}
+	}
+
 	opts := &backups.CreateOpts{
 		Name:        backupName,
 		VolumeID:    volumeID,
@@ -610,11 +631,18 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 		Container:   backupName,
 		Metadata:    utils.Merge(originVolume.Metadata, tags),
 		Force:       true,
+		Incremental: b.backupIncremental,
 	}
 
 	// Override container if one was passed by the user
 	if b.containerName != "" {
 		opts.Container = b.containerName
+	}
+
+	// Disable incremental backup for volume where no backup exists yet.
+	if b.backupIncremental && existingBackup == nil {
+		logWithFields.Infof("No backup exists yet for volume %s, will first run a full backup.", volumeID)
+		opts.Incremental = false
 	}
 
 	backup, err := backups.Create(b.client, opts).Extract()
@@ -1092,4 +1120,19 @@ func expandVolumeProperties(log logrus.FieldLogger, volume *volumes.Volume) imag
 		})
 	}
 	return imgAttrUpdateOpts
+}
+
+func (b *BlockStore) getVolumeBackups(logWithFields *logrus.Entry, volumeID string) ([]backups.Backup, error) {
+	// use detail and a non-volumeid search to allow usage of later microversions
+	pages, err := backups.ListDetail(b.client, nil).AllPages()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list backups: %w", err)
+	}
+
+	allBackups, err := backups.ExtractBackups(pages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract backups: %w", err)
+	}
+
+	return allBackups, nil
 }

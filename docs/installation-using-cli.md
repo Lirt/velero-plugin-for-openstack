@@ -83,6 +83,8 @@ spec:
     # deletes all dependent volume resources (i.e. snapshots) before deleting
     # the clone volume (works only, when a snapshot method is set to clone)
     cascadeDelete: "true"
+    # backups will be created incrementally (works only when snapshot method is set to backup)
+    incrementalBackup: "true"
 ```
 
 For backups of Manila shares create another configuration of `volumesnapshotlocations.velero.io`:
