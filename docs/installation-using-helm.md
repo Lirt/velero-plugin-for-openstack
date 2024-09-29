@@ -66,7 +66,7 @@ configuration:
       # the clone volume (works only, when a snapshot method is set to clone)
       cascadeDelete: "true"
       # backups will be created incrementally (works only when snapshot method is set to backup)
-      incrementalBackup: "true"
+      backupIncremental: "true"
   # for Manila shared filesystem storage
   - name: manila
     provider: community.openstack.org/openstack-manila
