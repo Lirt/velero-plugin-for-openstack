@@ -1,15 +1,17 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/v2"
 )
 
 var (
@@ -144,10 +146,13 @@ func DurationToSeconds(str string) (int, error) {
 
 // WaitForStatus wait until the resource status satisfies the expected statuses
 func WaitForStatus(statuses []string, timeout int, checkFunc func() (string, error)) error {
-	return gophercloud.WaitFor(timeout, func() (bool, error) {
+	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+	return gophercloud.WaitFor(ctx, func(ctx context.Context) (bool, error) {
 		status, err := checkFunc()
 		if err != nil {
-			if _, ok := err.(gophercloud.ErrDefault404); ok && SliceContains(statuses, "deleted") {
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) && SliceContains(statuses, "deleted") {
 				return true, nil
 			}
 			return false, err
@@ -175,13 +180,14 @@ func EnsureDeleted(deleteFunc, checkFunc, resetFunc func() error, timeout int, d
 	for {
 		err := deleteFunc()
 		if err != nil {
-			switch err.(type) {
-			case gophercloud.ErrDefault404:
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return nil
-			case gophercloud.ErrDefault409:
+			}
+			if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
 				time.Sleep(retryDelay)
 				continue
 			}
+
 			return err
 		}
 
@@ -212,7 +218,7 @@ func EnsureDeleted(deleteFunc, checkFunc, resetFunc func() error, timeout int, d
 		// reset status and try to delete it again
 		err = resetFunc()
 		if err != nil {
-			if _, ok := err.(gophercloud.ErrDefault404); ok {
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return nil
 			}
 			return err

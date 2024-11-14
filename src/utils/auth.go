@@ -1,16 +1,17 @@
 package utils
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/utils/client"
-	"github.com/gophercloud/utils/openstack/clientconfig"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/utils/v2/client"
+	"github.com/gophercloud/utils/v2/openstack/clientconfig"
 	"github.com/sirupsen/logrus"
 )
 
@@ -105,7 +106,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 	// set user agent with a version
 	(*pc).UserAgent.Prepend("velero-plugin-for-openstack/" + Version + "@" + GitSHA)
 
-	err = openstack.Authenticate(*pc, *ao)
+	err = openstack.Authenticate(context.TODO(), *pc, *ao)
 	if err != nil {
 		return fmt.Errorf("failed to authenticate: %w", err)
 	}

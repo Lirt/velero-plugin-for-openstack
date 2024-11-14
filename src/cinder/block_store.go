@@ -1,21 +1,22 @@
 package cinder
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
 
 	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/apiversions"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/backups"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumeactions"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/snapshots"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/apiversions"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/backups"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/snapshots"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/sirupsen/logrus"
 	velerovolumesnapshotter "github.com/vmware-tanzu/velero/pkg/plugin/velero/volumesnapshotter/v1"
 	v1 "k8s.io/api/core/v1"
@@ -210,7 +211,7 @@ func (b *BlockStore) Init(config map[string]string) error {
 			}
 			logWithFields.Infof("Setting the supported %v microversion", b.client.Microversion)
 
-			b.imgClient, err = openstack.NewImageServiceV2(b.provider, gophercloud.EndpointOpts{
+			b.imgClient, err = openstack.NewImageV2(b.provider, gophercloud.EndpointOpts{
 				Region: region,
 			})
 			if err != nil {
@@ -265,7 +266,7 @@ func (b *BlockStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 	logWithFields.Info("Snapshot is in 'available' state")
 
 	// get original volume with its metadata
-	originVolume, err := volumes.Get(b.client, snapshot.VolumeID).Extract()
+	originVolume, err := volumes.Get(context.TODO(), b.client, snapshot.VolumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get volume from cinder")
 		return "", fmt.Errorf("failed to get volume %v from cinder: %w", snapshot.VolumeID, err)
@@ -282,7 +283,8 @@ func (b *BlockStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ s
 		Metadata:         originVolume.Metadata,
 	}
 
-	volume, err := volumes.Create(b.client, opts).Extract()
+	hintOpts := volumes.SchedulerHintOpts{}
+	volume, err := volumes.Create(context.TODO(), b.client, opts, hintOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from snapshot")
 		return "", fmt.Errorf("failed to create volume %v from snapshot %v: %w", volumeName, snapshotID, err)
@@ -360,7 +362,8 @@ func (b *BlockStore) createVolumeFromBackup(backupID, volumeType, volumeAZ strin
 		opts.Metadata = *backup.Metadata
 	}
 
-	volume, err := volumes.Create(b.client, opts).Extract()
+	hintOpts := volumes.SchedulerHintOpts{}
+	volume, err := volumes.Create(context.TODO(), b.client, opts, hintOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from backup")
 		return "", fmt.Errorf("failed to create volume %v from backup %v: %w", volumeName, backupID, err)
@@ -411,7 +414,8 @@ func (b *BlockStore) createVolumeFromImage(imageID, volumeType, volumeAZ string)
 		// TODO: add Metadata support
 	}
 
-	volume, err := volumes.Create(b.client, opts).Extract()
+	hintOpts := volumes.SchedulerHintOpts{}
+	volume, err := volumes.Create(context.TODO(), b.client, opts, hintOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from image")
 		return "", fmt.Errorf("failed to create volume %v from image %v: %w", volumeName, imageID, err)
@@ -451,7 +455,8 @@ func (b *BlockStore) cloneVolume(logWithFields *logrus.Entry, volumeID, volumeNa
 		Metadata:         utils.Merge(originVolume.Metadata, tags),
 	}
 
-	volume, err := volumes.Create(b.client, opts).Extract()
+	hintOpts := volumes.SchedulerHintOpts{}
+	volume, err := volumes.Create(context.TODO(), b.client, opts, hintOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create volume from volume clone")
 		return "", fmt.Errorf("failed to create volume %v from volume clone %v: %w", volumeName, volumeID, err)
@@ -475,7 +480,7 @@ func (b *BlockStore) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, e
 	})
 	logWithFields.Info("BlockStore.GetVolumeInfo called")
 
-	volume, err := volumes.Get(b.client, volumeID).Extract()
+	volume, err := volumes.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get volume from cinder")
 		return "", nil, fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
@@ -493,7 +498,7 @@ func (b *BlockStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err e
 	logWithFields.Info("BlockStore.IsVolumeReady called")
 
 	// Get volume object from Cinder
-	volume, err := volumes.Get(b.client, volumeID).Extract()
+	volume, err := volumes.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get volume from cinder")
 		return false, fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
@@ -535,7 +540,7 @@ func (b *BlockStore) createSnapshot(volumeID, volumeAZ string, tags map[string]s
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
-	originVolume, err := volumes.Get(b.client, volumeID).Extract()
+	originVolume, err := volumes.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get volume from cinder")
 		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
@@ -548,7 +553,7 @@ func (b *BlockStore) createSnapshot(volumeID, volumeAZ string, tags map[string]s
 		VolumeID:    volumeID,
 		Force:       true,
 	}
-	snapshot, err := snapshots.Create(b.client, opts).Extract()
+	snapshot, err := snapshots.Create(context.TODO(), b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create snapshot from volume")
 		return "", fmt.Errorf("failed to create snapshot %v from volume %v: %w", snapshotName, volumeID, err)
@@ -604,7 +609,7 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
-	originVolume, err := volumes.Get(b.client, volumeID).Extract()
+	originVolume, err := volumes.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get volume from cinder")
 		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
@@ -645,7 +650,7 @@ func (b *BlockStore) createBackup(volumeID, volumeAZ string, tags map[string]str
 		opts.Incremental = false
 	}
 
-	backup, err := backups.Create(b.client, opts).Extract()
+	backup, err := backups.Create(context.TODO(), b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create backup from volume")
 		return "", fmt.Errorf("failed to create backup %v from volume %v: %w", backupName, volumeID, err)
@@ -676,13 +681,13 @@ func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]stri
 	})
 	logWithFields.Info("BlockStore.CreateSnapshot called")
 
-	originVolume, err := volumes.Get(b.client, volumeID).Extract()
+	originVolume, err := volumes.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get volume from cinder")
 		return "", fmt.Errorf("failed to get volume %v from cinder: %w", volumeID, err)
 	}
 
-	opts := &volumeactions.UploadImageOpts{
+	opts := &volumes.UploadImageOpts{
 		ImageName: imageName,
 		// Description: "Velero volume image",
 		ContainerFormat: originVolume.VolumeImageMetadata["container_format"],
@@ -691,7 +696,7 @@ func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]stri
 		Force:           true,
 		// TODO: add Metadata support
 	}
-	image, err := volumeactions.UploadImage(b.client, volumeID, opts).Extract()
+	image, err := volumes.UploadImage(context.TODO(), b.client, volumeID, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create image from volume")
 		return "", fmt.Errorf("failed to create image %v from volume %v: %w", imageName, volumeID, err)
@@ -705,7 +710,7 @@ func (b *BlockStore) createImage(volumeID, volumeAZ string, tags map[string]stri
 	logWithFields.Info("Volume image is in 'active' state")
 
 	updateProperties := expandVolumeProperties(logWithFields, originVolume)
-	_, err = images.Update(b.imgClient, image.ImageID, updateProperties).Extract()
+	_, err = images.Update(context.TODO(), b.imgClient, image.ImageID, updateProperties).Extract()
 	if err != nil {
 		logWithFields.Error("failed to update image properties")
 		return image.ImageID, fmt.Errorf("failed to update image properties: %w", err)
@@ -744,9 +749,9 @@ func (b *BlockStore) deleteSnapshot(snapshotID string) error {
 		return b.ensureSnapshotDeleted(logWithFields, snapshotID, b.snapshotTimeout)
 	}
 
-	err := snapshots.Delete(b.client, snapshotID).ExtractErr()
+	err := snapshots.Delete(context.TODO(), b.client, snapshotID).ExtractErr()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			logWithFields.Info("snapshot is already deleted")
 			return nil
 		}
@@ -762,7 +767,7 @@ func (b *BlockStore) deleteSnapshots(logWithFields *logrus.Entry, volumeID strin
 	listOpts := snapshots.ListOpts{
 		VolumeID: volumeID,
 	}
-	pages, err := snapshots.List(b.client, listOpts).AllPages()
+	pages, err := snapshots.List(b.client, listOpts).AllPages(context.TODO())
 	if err != nil {
 		return fmt.Errorf("failed to list %s volume snapshots: %w", volumeID, err)
 	}
@@ -819,9 +824,9 @@ func (b *BlockStore) deleteClone(cloneID string) error {
 		return b.ensureVolumeDeleted(logWithFields, cloneID, b.cloneTimeout)
 	}
 
-	err := volumes.Delete(b.client, cloneID, nil).ExtractErr()
+	err := volumes.Delete(context.TODO(), b.client, cloneID, nil).ExtractErr()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			logWithFields.Info("volume clone is already deleted")
 			return nil
 		}
@@ -845,9 +850,9 @@ func (b *BlockStore) deleteBackup(backupID string) error {
 		return b.ensureBackupDeleted(logWithFields, backupID, b.backupTimeout)
 	}
 
-	err := backups.Delete(b.client, backupID).ExtractErr()
+	err := backups.Delete(context.TODO(), b.client, backupID).ExtractErr()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			logWithFields.Info("volume backup is already deleted")
 			return nil
 		}
@@ -866,9 +871,9 @@ func (b *BlockStore) deleteImage(imageID string) error {
 	logWithFields.Info("BlockStore.DeleteSnapshot called")
 
 	// Delete volume image from Glance
-	err := images.Delete(b.imgClient, imageID).ExtractErr()
+	err := images.Delete(context.TODO(), b.imgClient, imageID).ExtractErr()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			logWithFields.Info("volume image is already deleted")
 			return nil
 		}
@@ -938,7 +943,7 @@ func (b *BlockStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID s
 }
 
 func (b *BlockStore) getCinderMicroversion() (string, error) {
-	allVersions, err := apiversions.List(b.client).AllPages()
+	allVersions, err := apiversions.List(b.client).AllPages(context.TODO())
 	if err != nil {
 		return "", err
 	}
@@ -969,7 +974,7 @@ func (b *BlockStore) setCinderMicroversion(version string) error {
 
 func (b *BlockStore) waitForVolumeStatus(id string, statuses []string, secs int) (current *volumes.Volume, err error) {
 	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
-		current, err = volumes.Get(b.client, id).Extract()
+		current, err = volumes.Get(context.TODO(), b.client, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -979,7 +984,7 @@ func (b *BlockStore) waitForVolumeStatus(id string, statuses []string, secs int)
 
 func (b *BlockStore) waitForSnapshotStatus(id string, statuses []string, secs int) (current *snapshots.Snapshot, err error) {
 	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
-		current, err = snapshots.Get(b.client, id).Extract()
+		current, err = snapshots.Get(context.TODO(), b.client, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -989,7 +994,7 @@ func (b *BlockStore) waitForSnapshotStatus(id string, statuses []string, secs in
 
 func (b *BlockStore) waitForBackupStatus(id string, statuses []string, secs int) (current *backups.Backup, err error) {
 	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
-		current, err = backups.Get(b.client, id).Extract()
+		current, err = backups.Get(context.TODO(), b.client, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -999,7 +1004,7 @@ func (b *BlockStore) waitForBackupStatus(id string, statuses []string, secs int)
 
 func (b *BlockStore) waitForImageStatus(id string, statuses []string, secs int) (current *images.Image, err error) {
 	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
-		current, err = images.Get(b.imgClient, id).Extract()
+		current, err = images.Get(context.TODO(), b.imgClient, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -1009,7 +1014,7 @@ func (b *BlockStore) waitForImageStatus(id string, statuses []string, secs int) 
 
 func (b *BlockStore) ensureVolumeDeleted(logWithFields *logrus.Entry, id string, secs int) error {
 	deleteFunc := func() error {
-		err := volumes.Delete(b.client, id, nil).ExtractErr()
+		err := volumes.Delete(context.TODO(), b.client, id, nil).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to delete a %s volume: %v", id, err)
 		}
@@ -1024,10 +1029,10 @@ func (b *BlockStore) ensureVolumeDeleted(logWithFields *logrus.Entry, id string,
 	}
 	resetFunc := func() error {
 		logWithFields.Infof("resetting a %s volume status and trying again", id)
-		opts := &volumeactions.ResetStatusOpts{
+		opts := &volumes.ResetStatusOpts{
 			Status: "error",
 		}
-		err := volumeactions.ResetStatus(b.client, id, opts).ExtractErr()
+		err := volumes.ResetStatus(context.TODO(), b.client, id, opts).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to reset a %s volume status: %v", id, err)
 		}
@@ -1039,7 +1044,7 @@ func (b *BlockStore) ensureVolumeDeleted(logWithFields *logrus.Entry, id string,
 
 func (b *BlockStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id string, secs int) error {
 	deleteFunc := func() error {
-		err := snapshots.Delete(b.client, id).ExtractErr()
+		err := snapshots.Delete(context.TODO(), b.client, id).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to delete a %s snapshot: %v", id, err)
 		}
@@ -1057,7 +1062,7 @@ func (b *BlockStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id strin
 		opts := &snapshots.ResetStatusOpts{
 			Status: "error",
 		}
-		err := snapshots.ResetStatus(b.client, id, opts).ExtractErr()
+		err := snapshots.ResetStatus(context.TODO(), b.client, id, opts).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to reset a %s snapshot status: %v", id, err)
 		}
@@ -1069,7 +1074,7 @@ func (b *BlockStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id strin
 
 func (b *BlockStore) ensureBackupDeleted(logWithFields *logrus.Entry, id string, secs int) error {
 	deleteFunc := func() error {
-		err := backups.Delete(b.client, id).ExtractErr()
+		err := backups.Delete(context.TODO(), b.client, id).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to delete a %s backup: %v", id, err)
 		}
@@ -1087,7 +1092,7 @@ func (b *BlockStore) ensureBackupDeleted(logWithFields *logrus.Entry, id string,
 		opts := &backups.ResetStatusOpts{
 			Status: "error",
 		}
-		err := backups.ResetStatus(b.client, id, opts).ExtractErr()
+		err := backups.ResetStatus(context.TODO(), b.client, id, opts).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to reset a %s backup status: %v", id, err)
 		}
@@ -1124,7 +1129,7 @@ func expandVolumeProperties(log logrus.FieldLogger, volume *volumes.Volume) imag
 
 func (b *BlockStore) getVolumeBackups(logWithFields *logrus.Entry, volumeID string) ([]backups.Backup, error) {
 	// use detail and a non-volumeid search to allow usage of later microversions
-	pages, err := backups.ListDetail(b.client, nil).AllPages()
+	pages, err := backups.ListDetail(b.client, nil).AllPages(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list backups: %w", err)
 	}

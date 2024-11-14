@@ -1,20 +1,22 @@
 package manila
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
 
 	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/apiversions"
-	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/replicas"
-	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/shareaccessrules"
-	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/shares"
-	"github.com/gophercloud/gophercloud/openstack/sharedfilesystems/v2/snapshots"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/sharedfilesystems/apiversions"
+	"github.com/gophercloud/gophercloud/v2/openstack/sharedfilesystems/v2/replicas"
+	"github.com/gophercloud/gophercloud/v2/openstack/sharedfilesystems/v2/shareaccessrules"
+	"github.com/gophercloud/gophercloud/v2/openstack/sharedfilesystems/v2/shares"
+	"github.com/gophercloud/gophercloud/v2/openstack/sharedfilesystems/v2/snapshots"
 	"github.com/sirupsen/logrus"
 	velerovolumesnapshotter "github.com/vmware-tanzu/velero/pkg/plugin/velero/volumesnapshotter/v1"
 	v1 "k8s.io/api/core/v1"
@@ -237,7 +239,7 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 	logWithFields.Info("Snapshot is in 'available' status")
 
 	// get original share with its metadata
-	originShare, err := shares.Get(b.client, snapshot.ShareID).Extract()
+	originShare, err := shares.Get(context.TODO(), b.client, snapshot.ShareID).Extract()
 	if err != nil {
 		logWithFields.Errorf("failed to get original share %v from manila", snapshot.ShareID)
 		return "", fmt.Errorf("failed to get original share %v from manila: %w", snapshot.ShareID, err)
@@ -265,7 +267,7 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 		// see https://github.com/openstack/manila/blob/stable/zed/manila/share/api.py#L258-L266
 		opts.AvailabilityZone = ""
 	}
-	share, err := shares.Create(b.client, opts).Extract()
+	share, err := shares.Create(context.TODO(), b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Errorf("failed to create share from snapshot")
 		return "", fmt.Errorf("failed to create share %v from snapshot %v: %w", volumeName, snapshotID, err)
@@ -288,7 +290,7 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 			AccessTo:    rule.AccessTo,
 			AccessLevel: rule.AccessLevel,
 		}
-		shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
+		shareAccess, err := shares.GrantAccess(context.TODO(), b.client, share.ID, accessOpts).Extract()
 		if err != nil {
 			logWithFields.Error("failed to grant an access to manila share")
 			return share.ID, fmt.Errorf("failed to grant an access to manila share %v: %w", share.ID, err)
@@ -361,7 +363,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 		Description: "Velero temp snapshot",
 		ShareID:     shareID,
 	}
-	snapshot, err := snapshots.Create(b.client, snapOpts).Extract()
+	snapshot, err := snapshots.Create(context.TODO(), b.client, snapOpts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create an intermediate share snapshot from the source volume share")
 		return "", "", fmt.Errorf("failed to create an intermediate share snapshot from the %v source volume share: %w", shareID, err)
@@ -379,9 +381,9 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 
 		// Delete intermediate snapshot from Manila
 		logWithFields.Infof("removing an intermediate %s snapshot", snapshot.ID)
-		err := snapshots.Delete(b.client, snapshot.ID).ExtractErr()
+		err := snapshots.Delete(context.TODO(), b.client, snapshot.ID).ExtractErr()
 		if err != nil {
-			if _, ok := err.(gophercloud.ErrDefault404); ok {
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				logWithFields.Info("intermediate snapshot is already deleted")
 				return
 			}
@@ -415,7 +417,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 		// see https://github.com/openstack/manila/blob/stable/zed/manila/share/api.py#L258-L266
 		opts.AvailabilityZone = ""
 	}
-	share, err := shares.Create(b.client, opts).Extract()
+	share, err := shares.Create(context.TODO(), b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Errorf("failed to create share clone from intermediate snapshot")
 		return "", "", fmt.Errorf("failed to create share clone %v from intermediate snapshot %v: %w", shareName, snapshot.ID, err)
@@ -438,7 +440,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 			AccessTo:    rule.AccessTo,
 			AccessLevel: rule.AccessLevel,
 		}
-		shareAccess, err := shares.GrantAccess(b.client, share.ID, accessOpts).Extract()
+		shareAccess, err := shares.GrantAccess(context.TODO(), b.client, share.ID, accessOpts).Extract()
 		if err != nil {
 			logWithFields.Error("failed to grant an access to manila share clone")
 			return share.ID, "", fmt.Errorf("failed to grant an access to manila share clone %v: %w", share.ID, err)
@@ -467,7 +469,7 @@ func (b *FSStore) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, erro
 	})
 	logWithFields.Info("FSStore.GetVolumeInfo called")
 
-	share, err := shares.Get(b.client, volumeID).Extract()
+	share, err := shares.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get share from manila")
 		return "", nil, fmt.Errorf("failed to get share %v from manila: %w", volumeID, err)
@@ -485,7 +487,7 @@ func (b *FSStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err erro
 	logWithFields.Info("FSStore.IsVolumeReady called")
 
 	// Get share object from Manila
-	share, err := shares.Get(b.client, volumeID).Extract()
+	share, err := shares.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
 		logWithFields.Error("failed to get share from manila")
 		return false, fmt.Errorf("failed to get share %v from manila: %w", volumeID, err)
@@ -528,7 +530,7 @@ func (b *FSStore) createSnapshot(volumeID, volumeAZ string, tags map[string]stri
 		ShareID:     volumeID,
 		// TODO: add Metadata once https://github.com/gophercloud/gophercloud/issues/2660 is merged
 	}
-	snapshot, err := snapshots.Create(b.client, opts).Extract()
+	snapshot, err := snapshots.Create(context.TODO(), b.client, opts).Extract()
 	if err != nil {
 		logWithFields.Error("failed to create snapshot from share")
 		return "", fmt.Errorf("failed to create snapshot %v from share %v: %w", snapshotName, volumeID, err)
@@ -594,9 +596,9 @@ func (b *FSStore) deleteSnapshot(snapshotID string) error {
 		return b.ensureSnapshotDeleted(logWithFields, snapshotID, b.snapshotTimeout)
 	}
 
-	err := snapshots.Delete(b.client, snapshotID).ExtractErr()
+	err := snapshots.Delete(context.TODO(), b.client, snapshotID).ExtractErr()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			logWithFields.Info("snapshot is already deleted")
 			return nil
 		}
@@ -650,7 +652,7 @@ func (b *FSStore) deleteSnapshots(logWithFields *logrus.Entry, shareID string) e
 	listOpts := snapshots.ListOpts{
 		ShareID: shareID,
 	}
-	pages, err := snapshots.ListDetail(b.client, listOpts).AllPages()
+	pages, err := snapshots.ListDetail(b.client, listOpts).AllPages(context.TODO())
 	if err != nil {
 		return fmt.Errorf("failed to list %s share snapshots: %w", shareID, err)
 	}
@@ -713,9 +715,9 @@ func (b *FSStore) deleteClone(cloneID string) error {
 		return b.ensureShareDeleted(logWithFields, cloneID, b.cloneTimeout)
 	}
 
-	err := shares.Delete(b.client, cloneID).ExtractErr()
+	err := shares.Delete(context.TODO(), b.client, cloneID).ExtractErr()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			logWithFields.Info("share clone is already deleted")
 			return nil
 		}
@@ -797,7 +799,7 @@ func (b *FSStore) changeAZ(logWithFields *logrus.Entry, shareID, az string) erro
 
 	// resync replica in a new AZ
 	logWithFields.Infof("resyncing %s replica to a new availability zone", replica.ID)
-	err = replicas.Resync(b.client, replica.ID).ExtractErr()
+	err = replicas.Resync(context.TODO(), b.client, replica.ID).ExtractErr()
 	if err != nil {
 		return fmt.Errorf("failed to resync a %q share replica: %w", replica.ID, err)
 	}
@@ -808,7 +810,7 @@ func (b *FSStore) changeAZ(logWithFields *logrus.Entry, shareID, az string) erro
 
 	// promote replica in a new AZ
 	logWithFields.Infof("promoting %s replica to a new availability zone", replica.ID)
-	err = replicas.Promote(b.client, replica.ID, replicas.PromoteOpts{}).ExtractErr()
+	err = replicas.Promote(context.TODO(), b.client, replica.ID, replicas.PromoteOpts{}).ExtractErr()
 	if err != nil {
 		return fmt.Errorf("failed to promote a %q share replica: %w", replica.ID, err)
 	}
@@ -834,7 +836,7 @@ func (b *FSStore) changeAZ(logWithFields *logrus.Entry, shareID, az string) erro
 			logWithFields.Infof("waiting for an old replica %s in %s availability zone to be deleted", oldReplica.ID, oldReplica.AvailabilityZone)
 			return b.ensureReplicaDeleted(logWithFields, oldReplica.ID, b.replicaTimeout)
 		}
-		err = replicas.Delete(b.client, oldReplica.ID).ExtractErr()
+		err = replicas.Delete(context.TODO(), b.client, oldReplica.ID).ExtractErr()
 		if err != nil {
 			return fmt.Errorf("failed to delete an old %q replica: %w", oldReplica.ID, err)
 		}
@@ -871,7 +873,7 @@ func (b *FSStore) findOrCreateShareReplica(logWithFields *logrus.Entry, shareID,
 		ShareID:          shareID,
 		AvailabilityZone: az,
 	}
-	replica, err := replicas.Create(b.client, replicaOpts).Extract()
+	replica, err := replicas.Create(context.TODO(), b.client, replicaOpts).Extract()
 	if err != nil {
 		return nil, curReplica, fmt.Errorf("failed to create a new replica for a %q share: %w", shareID, err)
 	}
@@ -890,7 +892,7 @@ func (b *FSStore) findShareActiveReplica(logWithFields *logrus.Entry, shareID st
 	listOpts := replicas.ListOpts{
 		ShareID: shareID,
 	}
-	pages, err := replicas.ListDetail(b.client, listOpts).AllPages()
+	pages, err := replicas.ListDetail(b.client, listOpts).AllPages(context.TODO())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list %s share replicas: %w", shareID, err)
 	}
@@ -916,10 +918,10 @@ func (b *FSStore) getShareAccessRule(logWithFields *logrus.Entry, volumeID strin
 	var rules interface{}
 	var err error
 	if ok, _ := utils.CompareMicroversions("lte", getAccessRulesMicroversion, b.client.Microversion); ok {
-		rules, err = shareaccessrules.List(b.client, volumeID).Extract()
+		rules, err = shareaccessrules.List(context.TODO(), b.client, volumeID).Extract()
 	} else {
 		// deprecated API call
-		rules, err = shares.ListAccessRights(b.client, volumeID).Extract()
+		rules, err = shares.ListAccessRights(context.TODO(), b.client, volumeID).Extract()
 	}
 	if err != nil {
 		logWithFields.Errorf("failed to list share %v access rules from manila", volumeID)
@@ -950,7 +952,7 @@ func (b *FSStore) getShareAccessRule(logWithFields *logrus.Entry, volumeID strin
 }
 
 func (b *FSStore) getManilaMicroversion() (string, error) {
-	api, err := apiversions.Get(b.client, "v2").Extract()
+	api, err := apiversions.Get(context.TODO(), b.client, "v2").Extract()
 	if err != nil {
 		return "", err
 	}
@@ -959,7 +961,7 @@ func (b *FSStore) getManilaMicroversion() (string, error) {
 
 func (b *FSStore) waitForShareStatus(id string, statuses []string, secs int) (current *shares.Share, err error) {
 	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
-		current, err = shares.Get(b.client, id).Extract()
+		current, err = shares.Get(context.TODO(), b.client, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -969,7 +971,7 @@ func (b *FSStore) waitForShareStatus(id string, statuses []string, secs int) (cu
 
 func (b *FSStore) waitForSnapshotStatus(id string, statuses []string, secs int) (current *snapshots.Snapshot, err error) {
 	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
-		current, err = snapshots.Get(b.client, id).Extract()
+		current, err = snapshots.Get(context.TODO(), b.client, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -979,7 +981,7 @@ func (b *FSStore) waitForSnapshotStatus(id string, statuses []string, secs int) 
 
 func (b *FSStore) waitForReplicaStatus(id string, statuses []string, secs int) (current *replicas.Replica, err error) {
 	return current, utils.WaitForStatus(statuses, secs, func() (string, error) {
-		current, err = replicas.Get(b.client, id).Extract()
+		current, err = replicas.Get(context.TODO(), b.client, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -989,7 +991,7 @@ func (b *FSStore) waitForReplicaStatus(id string, statuses []string, secs int) (
 
 func (b *FSStore) waitForReplicaState(id string, states []string, secs int) (current *replicas.Replica, err error) {
 	return current, utils.WaitForStatus(states, secs, func() (string, error) {
-		current, err := replicas.Get(b.client, id).Extract()
+		current, err := replicas.Get(context.TODO(), b.client, id).Extract()
 		if err != nil {
 			return "", err
 		}
@@ -999,7 +1001,7 @@ func (b *FSStore) waitForReplicaState(id string, states []string, secs int) (cur
 
 func (b *FSStore) ensureShareDeleted(logWithFields *logrus.Entry, id string, secs int) error {
 	deleteFunc := func() error {
-		err := shares.Delete(b.client, id).ExtractErr()
+		err := shares.Delete(context.TODO(), b.client, id).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to delete a %s share: %v", id, err)
 		}
@@ -1017,7 +1019,7 @@ func (b *FSStore) ensureShareDeleted(logWithFields *logrus.Entry, id string, sec
 		opts := &shares.ResetStatusOpts{
 			Status: "error",
 		}
-		err := shares.ResetStatus(b.client, id, opts).ExtractErr()
+		err := shares.ResetStatus(context.TODO(), b.client, id, opts).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to reset a %s share status: %v", id, err)
 		}
@@ -1029,7 +1031,7 @@ func (b *FSStore) ensureShareDeleted(logWithFields *logrus.Entry, id string, sec
 
 func (b *FSStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id string, secs int) error {
 	deleteFunc := func() error {
-		err := snapshots.Delete(b.client, id).ExtractErr()
+		err := snapshots.Delete(context.TODO(), b.client, id).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to delete a %s snapshot: %v", id, err)
 		}
@@ -1047,7 +1049,7 @@ func (b *FSStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id string, 
 		opts := &snapshots.ResetStatusOpts{
 			Status: "error",
 		}
-		err := snapshots.ResetStatus(b.client, id, opts).ExtractErr()
+		err := snapshots.ResetStatus(context.TODO(), b.client, id, opts).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to reset a %s snapshot status: %v", id, err)
 		}
@@ -1059,7 +1061,7 @@ func (b *FSStore) ensureSnapshotDeleted(logWithFields *logrus.Entry, id string, 
 
 func (b *FSStore) ensureReplicaDeleted(logWithFields *logrus.Entry, id string, secs int) error {
 	deleteFunc := func() error {
-		err := replicas.Delete(b.client, id).ExtractErr()
+		err := replicas.Delete(context.TODO(), b.client, id).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to delete a %s replica: %v", id, err)
 		}
@@ -1077,7 +1079,7 @@ func (b *FSStore) ensureReplicaDeleted(logWithFields *logrus.Entry, id string, s
 		opts := &replicas.ResetStatusOpts{
 			Status: "error",
 		}
-		err := replicas.ResetStatus(b.client, id, opts).ExtractErr()
+		err := replicas.ResetStatus(context.TODO(), b.client, id, opts).ExtractErr()
 		if err != nil {
 			logWithFields.Infof("failed to reset a %s replica: %v", id, err)
 		}
