@@ -1,6 +1,7 @@
 package swift
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,9 +11,9 @@ import (
 	"time"
 
 	"github.com/Lirt/velero-plugin-for-openstack/src/utils"
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
-	"github.com/gophercloud/gophercloud/openstack/objectstorage/v1/objects"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack"
+	"github.com/gophercloud/gophercloud/v2/openstack/objectstorage/v1/objects"
 	"github.com/sirupsen/logrus"
 )
 
@@ -130,7 +131,7 @@ func (o *ObjectStore) GetObject(container, object string) (io.ReadCloser, error)
 		"object":    object,
 	}).Info("ObjectStore.GetObject called")
 
-	res := objects.Download(o.client, container, object, nil)
+	res := objects.Download(context.TODO(), o.client, container, object, nil)
 	if res.Err != nil {
 		return nil, fmt.Errorf("failed to download contents of %q object from %q container: %w", object, container, res.Err)
 	}
@@ -149,7 +150,7 @@ func (o *ObjectStore) PutObject(container string, object string, body io.Reader)
 		Content: body,
 	}
 
-	if _, err := objects.Create(o.client, container, object, createOpts).Extract(); err != nil {
+	if _, err := objects.Create(context.TODO(), o.client, container, object, createOpts).Extract(); err != nil {
 		return fmt.Errorf("failed to create new %q object in %q container: %w", object, container, err)
 	}
 
@@ -163,10 +164,10 @@ func (o *ObjectStore) ObjectExists(container, object string) (bool, error) {
 		"object":    object,
 	})
 	logWithFields.Info("ObjectStore.ObjectExists called")
-	res := objects.Get(o.client, container, object, nil)
+	res := objects.Get(context.TODO(), o.client, container, object, nil)
 
 	if res.Err != nil {
-		if _, ok := res.Err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(res.Err, http.StatusNotFound) {
 			logWithFields.Info("Object doesn't yet exist in container")
 			return false, nil
 		}
@@ -187,10 +188,9 @@ func (o *ObjectStore) ListCommonPrefixes(container, prefix, delimiter string) ([
 	opts := objects.ListOpts{
 		Prefix:    prefix,
 		Delimiter: delimiter,
-		Full:      true,
 	}
 
-	allPages, err := objects.List(o.client, container, opts).AllPages()
+	allPages, err := objects.List(o.client, container, opts).AllPages(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list objects in %q container: %w", container, err)
 	}
@@ -231,9 +231,9 @@ func (o *ObjectStore) DeleteObject(container, object string) error {
 	})
 	logWithFields.Info("ObjectStore.DeleteObject called")
 
-	_, err := objects.Delete(o.client, container, object, nil).Extract()
+	_, err := objects.Delete(context.TODO(), o.client, container, object, nil).Extract()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			logWithFields.Info("object is already deleted")
 			return nil
 		}
@@ -251,7 +251,7 @@ func (o *ObjectStore) CreateSignedURL(container, object string, ttl time.Duratio
 		"ttl":       ttl,
 	}).Info("ObjectStore.CreateSignedURL called")
 
-	url, err := objects.CreateTempURL(o.client, container, object, objects.CreateTempURLOpts{
+	url, err := objects.CreateTempURL(context.TODO(), o.client, container, object, objects.CreateTempURLOpts{
 		Method:     http.MethodGet,
 		TTL:        int(ttl.Seconds()),
 		TempURLKey: o.tempURLKey,

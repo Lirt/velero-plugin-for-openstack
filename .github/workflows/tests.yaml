@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        go-version: [ '1.21' ]
+        go-version: [ '1.22' ]
     steps:
       - name: Checkout velero-plugin-for-openstack
         uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        go-version: [ '1.21' ]
+        go-version: [ '1.22' ]
     steps:
       - name: Checkout velero-plugin-for-openstack
         uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        go-version: [ '1.21' ]
+        go-version: [ '1.22' ]
     env:
       VELERO_CLI_VERSION: 1.11.0
       # Contains Velero 1.11.0

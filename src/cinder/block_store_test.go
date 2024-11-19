@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	th "github.com/gophercloud/gophercloud/testhelper"
-	fakeClient "github.com/gophercloud/gophercloud/testhelper/client"
+	th "github.com/gophercloud/gophercloud/v2/testhelper"
+	fakeClient "github.com/gophercloud/gophercloud/v2/testhelper/client"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
