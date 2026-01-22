@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Lirt/velero-plugin-for-openstack/src/testhelper"
 	th "github.com/gophercloud/gophercloud/v2/testhelper"
 	fakeClient "github.com/gophercloud/gophercloud/v2/testhelper/client"
 	"github.com/sirupsen/logrus"
@@ -46,21 +47,21 @@ const tokenResp = `{
                         "id": "5fb3e04cc47345079bcccfa5a78d4de6",
                         "interface": "internal",
                         "region_id": "myRegion",
-                        "url": "http://localhost:8786/v3/955f0136ed4611ee9f489cb6d0fbac9d",
+                        "url": "http://localhost:8786/v2/955f0136ed4611ee9f489cb6d0fbac9d",
                         "region": "myRegion"
                     },
                     {
                         "id": "d48c520ef7b941c692100f24a1437864",
                         "interface": "public",
                         "region_id": "myRegion",
-                        "url": "https://localhost:8786/v3/955f0136ed4611ee9f489cb6d0fbac9d",
+                        "url": "%s",
                         "region": "myRegion"
                     },
                     {
                         "id": "da15876d31f24af3afc3a69cb918c45f",
                         "interface": "admin",
                         "region_id": "myRegion",
-                        "url": "https://localhost:8786/v3/955f0136ed4611ee9f489cb6d0fbac9d",
+                        "url": "https://localhost:8786/v2/955f0136ed4611ee9f489cb6d0fbac9d",
                         "region": "myRegion"
                     }
                 ],
@@ -74,21 +75,21 @@ const tokenResp = `{
                         "id": "2bed9ab4ed4111eeb4229cb6d0fbac9d",
                         "interface": "internal",
                         "region_id": "secondRegion",
-                        "url": "http://localhost2:8786/v3/4c30519aed4111eeab909cb6d0fbac9d",
+                        "url": "http://localhost2:8786/v2/4c30519aed4111eeab909cb6d0fbac9d",
                         "region": "secondRegion"
                     },
                     {
                         "id": "3bd7f8caed4111eeb77a9cb6d0fbac9d",
                         "interface": "public",
                         "region_id": "secondRegion",
-                        "url": "https://localhost2:8786/v3/4c30519aed4111eeab909cb6d0fbac9d",
+                        "url": "https://localhost2:8786/v2/4c30519aed4111eeab909cb6d0fbac9d",
                         "region": "secondRegion"
                     },
                     {
                         "id": "46474c98ed4111eeb2839cb6d0fbac9d",
                         "interface": "admin",
                         "region_id": "secondRegion",
-                        "url": "https://localhost2:8786/v3/4c30519aed4111eeab909cb6d0fbac9d",
+                        "url": "https://localhost2:8786/v2/4c30519aed4111eeab909cb6d0fbac9d",
                         "region": "secondRegion"
                     }
                 ],
@@ -149,18 +150,22 @@ func TestSimpleSharedFilesystemInit(t *testing.T) {
 	// Create fake provider client for authentication,
 	// prepare handler for authentication and redirect
 	// provider endpoint to fake client.
-	th.SetupPersistentPortHTTP(t, 32499)
-	defer th.TeardownHTTP()
-	fakeClient.ServiceClient()
-	fs.provider = fakeClient.ServiceClient().ProviderClient
-	fs.provider.IdentityEndpoint = th.Endpoint()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
+	fs.provider = fakeClient.ServiceClient(fakeServer).ProviderClient
+	fs.provider.IdentityEndpoint = fakeServer.Endpoint() + "v3/auth/tokens"
 
-	th.Mux.HandleFunc("/v3/auth/tokens",
+	tempDir, origDir := testhelper.TempCloudsYAML(t, fs.provider.IdentityEndpoint)
+	defer testhelper.TempCloudsYAMLCleanup(t, tempDir, origDir)
+
+	testhelper.MuxManilaVersionDiscovery(fakeServer, fakeServer.Endpoint()+"v2/955f0136ed4611ee9f489cb6d0fbac9d/", fakeServer.Endpoint()+"manila/v2/955f0136ed4611ee9f489cb6d0fbac9d/")
+	testhelper.MuxKeystoneVersionDiscovery(fakeServer, fakeServer.Endpoint()+"v3/")
+	fakeServer.Mux.HandleFunc("/v3/auth/tokens",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("X-Subject-Token", ID)
 
 			w.WriteHeader(http.StatusCreated)
-			fmt.Fprint(w, tokenResp)
+			fmt.Fprintf(w, tokenResp, fakeServer.Endpoint()+"v2/955f0136ed4611ee9f489cb6d0fbac9d/")
 		},
 	)
 

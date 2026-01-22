@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Lirt/velero-plugin-for-openstack/src/testhelper"
 	th "github.com/gophercloud/gophercloud/v2/testhelper"
 	fakeClient "github.com/gophercloud/gophercloud/v2/testhelper/client"
 	"github.com/sirupsen/logrus"
@@ -228,8 +229,8 @@ const getVolumeResponse = `{
     }
 }`
 
-func handleListBackupsDetail(t *testing.T) {
-	th.Mux.HandleFunc("/backups/detail", func(w http.ResponseWriter, r *http.Request) {
+func handleListBackupsDetail(t *testing.T, fakeServer th.FakeServer) {
+	fakeServer.Mux.HandleFunc("/backups/detail", func(w http.ResponseWriter, r *http.Request) {
 		th.TestMethod(t, r, "GET")
 		th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
 
@@ -242,7 +243,7 @@ func handleListBackupsDetail(t *testing.T) {
 		marker := r.Form.Get("marker")
 		switch marker {
 		case "":
-			fmt.Fprintf(w, listDetailResponse, th.Server.URL)
+			fmt.Fprintf(w, listDetailResponse, fakeServer.Server.URL)
 		case "1":
 			fmt.Fprintf(w, `{"backups": []}`)
 		default:
@@ -251,8 +252,8 @@ func handleListBackupsDetail(t *testing.T) {
 	})
 }
 
-func handleGetVolume(t *testing.T, volumeID string) {
-	th.Mux.HandleFunc(fmt.Sprintf("/volumes/%s", volumeID), func(w http.ResponseWriter, r *http.Request) {
+func handleGetVolume(t *testing.T, fakeServer th.FakeServer, volumeID string) {
+	fakeServer.Mux.HandleFunc(fmt.Sprintf("/volumes/%s", volumeID), func(w http.ResponseWriter, r *http.Request) {
 		th.TestMethod(t, r, "GET")
 		th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
 
@@ -262,8 +263,8 @@ func handleGetVolume(t *testing.T, volumeID string) {
 	})
 }
 
-func handleGetBackup(t *testing.T, backupID string) {
-	th.Mux.HandleFunc(fmt.Sprintf("/backups/%s", backupID), func(w http.ResponseWriter, r *http.Request) {
+func handleGetBackup(t *testing.T, fakeServer th.FakeServer, backupID string) {
+	fakeServer.Mux.HandleFunc(fmt.Sprintf("/backups/%s", backupID), func(w http.ResponseWriter, r *http.Request) {
 		th.TestMethod(t, r, "GET")
 		th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
 
@@ -296,13 +297,16 @@ func TestSimpleBlockStorageInit(t *testing.T) {
 	// Create fake provider client for authentication,
 	// prepare handler for authentication and redirect
 	// provider endpoint to fake client.
-	th.SetupPersistentPortHTTP(t, 32498)
-	defer th.TeardownHTTP()
-	fakeClient.ServiceClient()
-	bs.provider = fakeClient.ServiceClient().ProviderClient
-	bs.provider.IdentityEndpoint = th.Endpoint()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
+	bs.provider = fakeClient.ServiceClient(fakeServer).ProviderClient
+	bs.provider.IdentityEndpoint = fakeServer.Endpoint() + "v3/auth/tokens"
 
-	th.Mux.HandleFunc("/v3/auth/tokens",
+	tempDir, origDir := testhelper.TempCloudsYAML(t, bs.provider.IdentityEndpoint)
+	defer testhelper.TempCloudsYAMLCleanup(t, tempDir, origDir)
+
+	testhelper.MuxKeystoneVersionDiscovery(fakeServer, fakeServer.Endpoint()+"v3/")
+	fakeServer.Mux.HandleFunc("/v3/auth/tokens",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("X-Subject-Token", ID)
 
@@ -318,12 +322,12 @@ func TestSimpleBlockStorageInit(t *testing.T) {
 }
 
 func TestGetVolumeBackups(t *testing.T) {
-	th.SetupHTTP()
-	defer th.TeardownHTTP()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
 
-	handleListBackupsDetail(t)
+	handleListBackupsDetail(t, fakeServer)
 	store := BlockStore{
-		client: fakeClient.ServiceClient(),
+		client: fakeClient.ServiceClient(fakeServer),
 		log:    logrus.New(),
 	}
 
@@ -342,16 +346,16 @@ func TestGetVolumeBackups(t *testing.T) {
 }
 
 func TestCreateBackup(t *testing.T) {
-	th.SetupHTTP()
-	defer th.TeardownHTTP()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
 
 	backupID := "d32019d3-bc6e-4319-9c1d-6722fc136a22"
 	var createRequest *CreateIncrementalBackupRequest
 
-	handleListBackupsDetail(t)
-	handleGetBackup(t, backupID)
+	handleListBackupsDetail(t, fakeServer)
+	handleGetBackup(t, fakeServer, backupID)
 
-	th.Mux.HandleFunc("/backups", func(w http.ResponseWriter, r *http.Request) {
+	fakeServer.Mux.HandleFunc("/backups", func(w http.ResponseWriter, r *http.Request) {
 		// Reset createRequest for each request.
 		createRequest = &CreateIncrementalBackupRequest{}
 
@@ -364,7 +368,7 @@ func TestCreateBackup(t *testing.T) {
 	})
 
 	store := BlockStore{
-		client:            fakeClient.ServiceClient(),
+		client:            fakeClient.ServiceClient(fakeServer),
 		log:               logrus.New(),
 		backupIncremental: true,
 		backupTimeout:     3,
@@ -379,7 +383,7 @@ func TestCreateBackup(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		handleGetVolume(t, tt.volumeID)
+		handleGetVolume(t, fakeServer, tt.volumeID)
 		createdBackupID, err := store.createBackup(tt.volumeID, "default", map[string]string{})
 
 		if createRequest.Backup.Incremental != tt.expectedIncrementalValue {

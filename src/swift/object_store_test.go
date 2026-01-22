@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Lirt/velero-plugin-for-openstack/src/testhelper"
 	th "github.com/gophercloud/gophercloud/v2/testhelper"
 	fakeClient "github.com/gophercloud/gophercloud/v2/testhelper/client"
 	"github.com/sirupsen/logrus"
@@ -152,13 +153,16 @@ func TestSimpleObjectStorageInit(t *testing.T) {
 	// Create fake provider client for authentication,
 	// prepare handler for authentication and redirect
 	// provider endpoint to fake client.
-	th.SetupPersistentPortHTTP(t, 32500)
-	defer th.TeardownHTTP()
-	fakeClient.ServiceClient()
-	os.provider = fakeClient.ServiceClient().ProviderClient
-	os.provider.IdentityEndpoint = th.Endpoint()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
+	os.provider = fakeClient.ServiceClient(fakeServer).ProviderClient
+	os.provider.IdentityEndpoint = fakeServer.Endpoint() + "v3/auth/tokens"
 
-	th.Mux.HandleFunc("/v3/auth/tokens",
+	tempDir, origDir := testhelper.TempCloudsYAML(t, os.provider.IdentityEndpoint)
+	defer testhelper.TempCloudsYAMLCleanup(t, tempDir, origDir)
+
+	testhelper.MuxKeystoneVersionDiscovery(fakeServer, fakeServer.Endpoint()+"v3/")
+	fakeServer.Mux.HandleFunc("/v3/auth/tokens",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Add("X-Subject-Token", ID)
 
@@ -173,8 +177,8 @@ func TestSimpleObjectStorageInit(t *testing.T) {
 	}
 }
 
-func handleGetObject(t *testing.T, container, object string, data []byte) {
-	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
+func handleGetObject(t *testing.T, fakeServer th.FakeServer, container, object string, data []byte) {
+	fakeServer.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
 		func(w http.ResponseWriter, r *http.Request) {
 			th.TestMethod(t, r, http.MethodGet)
 			th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
@@ -190,8 +194,8 @@ func handleGetObject(t *testing.T, container, object string, data []byte) {
 		})
 }
 
-func handlePutObject(t *testing.T, container, object string, data []byte) {
-	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
+func handlePutObject(t *testing.T, fakeServer th.FakeServer, container, object string, data []byte) {
+	fakeServer.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
 		func(w http.ResponseWriter, r *http.Request) {
 			th.TestMethod(t, r, http.MethodPut)
 			th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
@@ -206,8 +210,8 @@ func handlePutObject(t *testing.T, container, object string, data []byte) {
 		})
 }
 
-func handleObjectExists(t *testing.T, container, object string) {
-	th.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
+func handleObjectExists(t *testing.T, fakeServer th.FakeServer, container, object string) {
+	fakeServer.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
 		func(w http.ResponseWriter, r *http.Request) {
 			th.TestMethod(t, r, http.MethodHead)
 			th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)
@@ -218,16 +222,16 @@ func handleObjectExists(t *testing.T, container, object string) {
 }
 
 func TestPutObject(t *testing.T) {
-	th.SetupHTTP()
-	defer th.TeardownHTTP()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
 
 	container := "testContainer"
 	object := "testKey"
 	content := "All code is guilty until proven innocent"
-	handlePutObject(t, container, object, []byte(content))
+	handlePutObject(t, fakeServer, container, object, []byte(content))
 
 	store := ObjectStore{
-		client: fakeClient.ServiceClient(),
+		client: fakeClient.ServiceClient(fakeServer),
 		log:    logrus.New(),
 	}
 	err := store.PutObject(container, object, strings.NewReader(content))
@@ -235,16 +239,16 @@ func TestPutObject(t *testing.T) {
 }
 
 func TestGetObject(t *testing.T) {
-	th.SetupHTTP()
-	defer th.TeardownHTTP()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
 
 	container := "testContainer"
 	object := "testKey"
 	content := "All code is guilty until proven innocent"
-	handleGetObject(t, container, object, []byte(content))
+	handleGetObject(t, fakeServer, container, object, []byte(content))
 
 	store := ObjectStore{
-		client: fakeClient.ServiceClient(),
+		client: fakeClient.ServiceClient(fakeServer),
 		log:    logrus.New(),
 	}
 	readCloser, err := store.GetObject(container, object)
@@ -256,15 +260,15 @@ func TestGetObject(t *testing.T) {
 }
 
 func TestObjectExists(t *testing.T) {
-	th.SetupHTTP()
-	defer th.TeardownHTTP()
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
 
 	container := "testContainer"
 	object := "testKey"
-	handleObjectExists(t, container, object)
+	handleObjectExists(t, fakeServer, container, object)
 
 	store := ObjectStore{
-		client: fakeClient.ServiceClient(),
+		client: fakeClient.ServiceClient(fakeServer),
 		log:    logrus.New(),
 	}
 
