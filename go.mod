@@ -5,9 +5,9 @@ go 1.25
 require (
 	github.com/gophercloud/gophercloud/v2 v2.10.0
 	github.com/gophercloud/utils/v2 v2.0.0-20260107124036-1d7954eb9711
-	github.com/sirupsen/logrus v1.9.3
-	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.10.0
+	github.com/sirupsen/logrus v1.9.4
+	github.com/spf13/pflag v1.0.10
+	github.com/stretchr/testify v1.11.1
 	github.com/vmware-tanzu/velero v1.17.2
 	k8s.io/api v0.33.3
 	k8s.io/apimachinery v0.33.3
