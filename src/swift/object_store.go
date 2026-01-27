@@ -36,7 +36,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 	var region string
 	o.log.WithFields(logrus.Fields{
 		"config": config,
-	}).Info("ObjectStore.Init called")
+	}).Debug("ObjectStore.Init called")
 
 	err := utils.Authenticate(&o.provider, "swift", config, o.log)
 	if err != nil {
@@ -64,7 +64,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 		}
 		o.log.WithFields(logrus.Fields{
 			"region": region,
-		}).Info("Successfully created object storage service client")
+		}).Debug("Successfully created object storage service client")
 	}
 
 	// see https://specs.openstack.org/openstack/swift-specs/specs/in_progress/service_token.html
@@ -81,7 +81,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 			"region":   region,
 			"account":  account,
 			"endpoint": o.client.Endpoint,
-		}).Info("Successfully overrode object storage service client endpoint by env OS_SWIFT_ACCOUNT_OVERRIDE")
+		}).Debug("Successfully overrode object storage service client endpoint by env OS_SWIFT_ACCOUNT_OVERRIDE")
 	}
 
 	endpoint := utils.GetEnv("OS_SWIFT_ENDPOINT_OVERRIDE", "")
@@ -96,7 +96,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 			"region":   region,
 			"account":  account,
 			"endpoint": o.client.Endpoint,
-		}).Info("Successfully overrode object storage service client endpoint by env OS_SWIFT_ENDPOINT_OVERRIDE")
+		}).Debug("Successfully overrode object storage service client endpoint by env OS_SWIFT_ENDPOINT_OVERRIDE")
 	}
 
 	// override the Temp URL hash function
@@ -107,7 +107,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 			"account":       account,
 			"endpoint":      o.client.Endpoint,
 			"tempURLDigest": o.tempURLDigest,
-		}).Info("Successfully overrode Temp URL digest by env OS_SWIFT_TEMP_URL_DIGEST")
+		}).Debug("Successfully overrode Temp URL digest by env OS_SWIFT_TEMP_URL_DIGEST")
 	}
 
 	// override the Temp URL key to generate a URL signature
@@ -118,7 +118,7 @@ func (o *ObjectStore) Init(config map[string]string) error {
 			"account":       account,
 			"endpoint":      o.client.Endpoint,
 			"tempURLDigest": o.tempURLDigest,
-		}).Info("Successfully overrode Temp URL key by env OS_SWIFT_TEMP_URL_KEY")
+		}).Debug("Successfully overrode Temp URL key by env OS_SWIFT_TEMP_URL_KEY")
 	}
 
 	return nil
@@ -129,7 +129,7 @@ func (o *ObjectStore) GetObject(container, object string) (io.ReadCloser, error)
 	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
-	}).Info("ObjectStore.GetObject called")
+	}).Debug("ObjectStore.GetObject called")
 
 	res := objects.Download(context.TODO(), o.client, container, object, nil)
 	if res.Err != nil {
@@ -144,7 +144,7 @@ func (o *ObjectStore) PutObject(container string, object string, body io.Reader)
 	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"object":    object,
-	}).Info("ObjectStore.PutObject called")
+	}).Debug("ObjectStore.PutObject called")
 
 	createOpts := objects.CreateOpts{
 		Content: body,
@@ -163,7 +163,7 @@ func (o *ObjectStore) ObjectExists(container, object string) (bool, error) {
 		"container": container,
 		"object":    object,
 	})
-	logWithFields.Info("ObjectStore.ObjectExists called")
+	logWithFields.Debug("ObjectStore.ObjectExists called")
 	res := objects.Get(context.TODO(), o.client, container, object, nil)
 
 	if res.Err != nil {
@@ -183,7 +183,7 @@ func (o *ObjectStore) ListCommonPrefixes(container, prefix, delimiter string) ([
 		"container": container,
 		"prefix":    prefix,
 		"delimiter": delimiter,
-	}).Info("ObjectStore.ListCommonPrefixes called")
+	}).Debug("ObjectStore.ListCommonPrefixes called")
 
 	opts := objects.ListOpts{
 		Prefix:    prefix,
@@ -213,7 +213,7 @@ func (o *ObjectStore) ListObjects(container, prefix string) ([]string, error) {
 	o.log.WithFields(logrus.Fields{
 		"container": container,
 		"prefix":    prefix,
-	}).Info("ObjectStore.ListObjects called")
+	}).Debug("ObjectStore.ListObjects called")
 
 	objects, err := o.ListCommonPrefixes(container, prefix, "/")
 	if err != nil {
@@ -229,7 +229,7 @@ func (o *ObjectStore) DeleteObject(container, object string) error {
 		"container": container,
 		"object":    object,
 	})
-	logWithFields.Info("ObjectStore.DeleteObject called")
+	logWithFields.Debug("ObjectStore.DeleteObject called")
 
 	_, err := objects.Delete(context.TODO(), o.client, container, object, nil).Extract()
 	if err != nil {
@@ -249,7 +249,7 @@ func (o *ObjectStore) CreateSignedURL(container, object string, ttl time.Duratio
 		"container": container,
 		"object":    object,
 		"ttl":       ttl,
-	}).Info("ObjectStore.CreateSignedURL called")
+	}).Debug("ObjectStore.CreateSignedURL called")
 
 	url, err := objects.CreateTempURL(context.TODO(), o.client, container, object, objects.CreateTempURLOpts{
 		Method:     http.MethodGet,
