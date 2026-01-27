@@ -29,9 +29,6 @@ spec:
   # config:
   #   cloud: cloud1
   #   region: fra
-  #   # If you want to enable restic you need to set resticRepoPrefix to this value:
-  #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
-  #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
 ```
 
 For backups of Cinder volumes create configuration of `volumesnapshotlocations.velero.io`:

@@ -20,9 +20,6 @@ configuration:
     # config:
     #   cloud: cloud1
     #   region: fra
-    #   # If you want to enable restic you need to set resticRepoPrefix to this value:
-    #   #   resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>
-    #   resticRepoPrefix: swift:my-awesome-container:/restic # Example
   volumeSnapshotLocation:
   # for Cinder block storage
   - name: cinder
@@ -109,15 +106,13 @@ configuration:
       enforceAZ: "true"
 initContainers:
 - name: velero-plugin-openstack
-  image: lirt/velero-plugin-for-openstack:v0.6.0
+  image: lirt/velero-plugin-for-openstack:v0.8.1
   imagePullPolicy: IfNotPresent
   volumeMounts:
     - mountPath: /target
       name: plugins
 snapshotsEnabled: true
 backupsEnabled: true
-# Optionally enable restic
-# deployRestic: true
 ```
 
 Make sure that secret `velero-credentials` exists and has proper format and content.
