@@ -128,5 +128,5 @@ helm upgrade \
      --install \
      --namespace velero \
      --values values.yaml \
-     --version 4.0.1
+     --version 11.3.2
 ```

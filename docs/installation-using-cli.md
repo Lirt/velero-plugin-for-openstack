@@ -6,12 +6,12 @@ First initialize velero plugin:
 # Initialize velero from scratch:
 velero install \
        --provider "community.openstack.org/openstack" \
-       --plugins lirt/velero-plugin-for-openstack:v0.6.0 \
+       --plugins lirt/velero-plugin-for-openstack:v0.8.1 \
        --bucket <SWIFT_CONTAINER_NAME> \
        --no-secret
 
 # Or add a plugin to existing velero:
-velero plugin add lirt/velero-plugin-for-openstack:v0.6.0
+velero plugin add lirt/velero-plugin-for-openstack:v0.8.1
 ```
 
 Then change configuration of `backupstoragelocations.velero.io`:

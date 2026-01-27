@@ -17,7 +17,7 @@ Official images are provided from [DockerHub](https://hub.docker.com/r/lirt/vele
     - [Backup Methods](#backup-methods)
     - [Consistency and Durability](#consistency-and-durability)
     - [Native VolumeSnapshots](#native-volumesnapshots)
-    - [Restic and Kopia](#restic)
+    - [Restic and Kopia](#restic-and-kopia)
   - [Known Issues](#known-issues)
   - [Test & Build](#test--build)
   - [Development](#development)
@@ -28,7 +28,7 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
-| v0.8.x         | 1.11.x 1.12.x 1.13.x |
+| v0.8.x         | 1.15.x, 1.16.x 1.17.x |
 | v0.7.x         | 1.11.x 1.12.x 1.13.x |
 | v0.6.x         | 1.9.x, 1.10.x 1.11.x |
 | v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x 1.11.x |
@@ -171,8 +171,8 @@ go build
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.6.0 \
-              --build-arg VERSION=v0.6.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.8.1 \
+              --build-arg VERSION=v0.8.1 \
               --build-arg GIT_SHA=somesha \
               --no-cache \
               --push \
