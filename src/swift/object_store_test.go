@@ -238,6 +238,23 @@ func TestPutObject(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestPutObjectLongName(t *testing.T) {
+	fakeServer := th.SetupHTTP()
+	defer fakeServer.Teardown()
+
+	container := "testContainer"
+	object := "prefix/backups/backup-name.json"
+	content := "Lorem ipsum"
+	handlePutObject(t, fakeServer, container, object, []byte(content))
+
+	store := ObjectStore{
+		client: fakeClient.ServiceClient(fakeServer),
+		log:    logrus.New(),
+	}
+	err := store.PutObject(container, object, strings.NewReader(content))
+	assert.Nil(t, err)
+}
+
 func TestGetObject(t *testing.T) {
 	fakeServer := th.SetupHTTP()
 	defer fakeServer.Teardown()
