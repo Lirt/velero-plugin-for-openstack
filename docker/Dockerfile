@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.3
+# syntax=docker/dockerfile:1.4
 
 # --- First stage
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
@@ -35,6 +35,8 @@ RUN export LDFLAGS="-X ${PKG}/src/utils.Version=${VERSION} -X ${PKG}/src/utils.G
 
 # --- Second stage
 FROM alpine:3
+
+ARG PLUGIN=velero-plugin-for-openstack
 RUN mkdir /plugins
 COPY --from=build /go/bin/${PLUGIN} /plugins/
 USER nobody:nogroup
