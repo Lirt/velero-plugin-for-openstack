@@ -10,9 +10,9 @@ jobs:
         go-version: [ '1.25' ]
     steps:
       - name: Checkout velero-plugin-for-openstack
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
       - name: Check formatting
@@ -36,9 +36,9 @@ jobs:
         go-version: [ '1.25' ]
     steps:
       - name: Checkout velero-plugin-for-openstack
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
       - name: Run unit tests
@@ -53,30 +53,29 @@ jobs:
         go-version: [ '1.25' ]
     env:
       VELERO_CLI_VERSION: 1.17.2
-      # Contains Velero 1.17.1
+      # Velero chart 11.3.2 contains Velero server version 1.17.1
       VELERO_CHART_VERSION: 11.3.2
       VELERO_RESTORE_NAME: my-test-restore-01
       VELERO_BACKUP_NAME: my-test-backup-01
-      # From tag 1.27.x
-      CINDER_CSI_CHART_VERSION: 2.32.2
-      MANILA_CSI_CHART_VERSION: 2.32.1
-      DOCKER_IMAGE_NAME: velero-plugin-for-openstack
+      CINDER_CSI_CHART_VERSION: 2.35.0
+      MANILA_CSI_CHART_VERSION: 2.35.0
+      VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME: velero-plugin-for-openstack
       SWIFT_CONTAINER_NAME: my-swift-container
       TESTS_DIRECTORY: tests/actions/integration-tests
     steps:
       - name: Checkout velero-plugin-for-openstack
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
       - name: Build Docker image
         run: |
           docker buildx build \
                  --file docker/Dockerfile \
-                 --tag "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+                 --tag "${VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
                  --build-arg VERSION=${GITHUB_REF_NAME} \
                  --build-arg GIT_SHA=${GITHUB_SHA} \
                  --platform linux/amd64 \
@@ -85,17 +84,17 @@ jobs:
       - name: Install Kind
         uses: helm/kind-action@v1.13.0
         with:
-          # Kubernetes 1.27.x
+          # Kubernetes 1.35.x
           version: v0.31.0
           cluster_name: kind
           wait: 120s
       - name: Load new velero-plugin-for-openstack image to kind cluster
         run: |
-          kind load docker-image "${DOCKER_IMAGE_NAME}:${GITHUB_SHA}"
+          kind load docker-image "${VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME}:${GITHUB_SHA}"
       - name: Install Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@v4
         with:
-          version: 'v3.20.0'
+          version: 'v4.1.0'
       - name: Install Velero CLI
         run: |
           wget --quiet "https://github.com/vmware-tanzu/velero/releases/download/v${VELERO_CLI_VERSION}/velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
@@ -103,7 +102,7 @@ jobs:
           sudo mv "velero-v${VELERO_CLI_VERSION}-linux-amd64/velero" /usr/local/bin/velero
           chmod 750 /usr/local/bin/velero
       - name: Deploy DevStack
-        uses: EmilienM/devstack-action@v0.14
+        uses: EmilienM/devstack-action@v0.19
         with:
           branch: 'stable/2025.2'
           enable_workaround_docker_io: 'false'
@@ -152,7 +151,7 @@ jobs:
                --namespace velero \
                --version "${VELERO_CHART_VERSION}" \
                --values "${TESTS_DIRECTORY}/velero-helm-values.yaml" \
-               --set "initContainers[0].image=${DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+               --set "initContainers[0].image=${VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
                --set "upgradeCRDs=false" \
                --timeout 10m \
                --wait \
