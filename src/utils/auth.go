@@ -31,7 +31,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 
 	// If we authenticate against multiple clouds, we cannot use reauthentication
 	if cloud, ok := config["cloud"]; ok {
-		log.Infof("Authentication will be done for cloud %v", cloud)
+		log.Debugf("Authentication will be done for cloud %v", cloud)
 		clientOpts.Cloud = cloud
 	} else {
 		// If service client is already initialized and contains auth result
@@ -45,7 +45,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 	}
 
 	if _, ok := os.LookupEnv("OS_SWIFT_AUTH_URL"); ok && service == "swift" {
-		log.Infof("Trying to authenticate against SwiftStack using special swift environment variables (see README.md)")
+		log.Debugf("Trying to authenticate against SwiftStack using special swift environment variables (see README.md)")
 
 		clientOpts.AuthInfo = &clientconfig.AuthInfo{
 			ApplicationCredentialID:     os.Getenv("OS_SWIFT_APPLICATION_CREDENTIAL_ID"),
@@ -66,7 +66,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 			AllowReauth:                 true,
 		}
 	} else {
-		log.Infof("Trying to authenticate against OpenStack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
+		log.Debugf("Trying to authenticate against OpenStack using environment variables (including application credentials) or using files ~/.config/openstack/clouds.yaml, /etc/openstack/clouds.yaml and ./clouds.yaml")
 		clientOpts.AuthInfo = &clientconfig.AuthInfo{
 			AllowReauth: true,
 		}
@@ -111,7 +111,7 @@ func Authenticate(pc **gophercloud.ProviderClient, service string, config map[st
 		return fmt.Errorf("failed to authenticate: %w", err)
 	}
 
-	log.Infof("Authentication against identity endpoint %v was successful", (*pc).IdentityEndpoint)
+	log.Debugf("Authentication against identity endpoint %v was successful", (*pc).IdentityEndpoint)
 
 	return nil
 }

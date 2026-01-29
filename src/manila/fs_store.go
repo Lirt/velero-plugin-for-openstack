@@ -95,7 +95,7 @@ var _ velerovolumesnapshotter.VolumeSnapshotter = (*FSStore)(nil)
 func (b *FSStore) Init(config map[string]string) error {
 	b.log.WithFields(logrus.Fields{
 		"config": config,
-	}).Info("FSStore.Init called")
+	}).Debug("FSStore.Init called")
 	b.config = config
 
 	// set default Manila CSI driver name
@@ -185,7 +185,7 @@ func (b *FSStore) Init(config map[string]string) error {
 			}
 
 			b.client.Microversion = replicasMicroversion
-			logWithFields.Infof("Setting the supported %v microversion", b.client.Microversion)
+			logWithFields.Debugf("Setting the supported %v microversion", b.client.Microversion)
 		} else {
 			// use GET method to obtain access rules
 			ok, err := utils.CompareMicroversions("lte", getAccessRulesMicroversion, mv)
@@ -195,11 +195,11 @@ func (b *FSStore) Init(config map[string]string) error {
 
 			if ok {
 				b.client.Microversion = getAccessRulesMicroversion
-				logWithFields.Infof("Setting the supported %v microversion", b.client.Microversion)
+				logWithFields.Debugf("Setting the supported %v microversion", b.client.Microversion)
 			}
 		}
 
-		logWithFields.Info("Successfully created shared filesystem service client")
+		logWithFields.Debug("Successfully created shared filesystem service client")
 	}
 
 	return nil
@@ -226,7 +226,7 @@ func (b *FSStore) createVolumeFromSnapshot(snapshotID, volumeType, volumeAZ stri
 		"snapshotTimeout": b.snapshotTimeout,
 		"method":          b.config["method"],
 	})
-	logWithFields.Info("FSStore.CreateVolumeFromSnapshot called")
+	logWithFields.Debug("FSStore.CreateVolumeFromSnapshot called")
 
 	volumeName := fmt.Sprintf("%s.backup.%s", snapshotID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	logWithFields.Info("Waiting for snapshot to be in 'available' status")
@@ -324,7 +324,7 @@ func (b *FSStore) createVolumeFromClone(cloneID, volumeType, volumeAZ string) (s
 		"cloneTimeout":    b.cloneTimeout,
 		"method":          b.config["method"],
 	})
-	logWithFields.Info("FSStore.CreateVolumeFromSnapshot called")
+	logWithFields.Debug("FSStore.CreateVolumeFromSnapshot called")
 
 	volumeName := fmt.Sprintf("%s.backup.%s", cloneID, strconv.FormatUint(utils.Rand.Uint64(), 10))
 	volumeDesc := "Velero backup from share clone"
@@ -467,7 +467,7 @@ func (b *FSStore) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, erro
 		"volumeID": volumeID,
 		"volumeAZ": volumeAZ,
 	})
-	logWithFields.Info("FSStore.GetVolumeInfo called")
+	logWithFields.Debug("FSStore.GetVolumeInfo called")
 
 	share, err := shares.Get(context.TODO(), b.client, volumeID).Extract()
 	if err != nil {
@@ -484,7 +484,7 @@ func (b *FSStore) IsVolumeReady(volumeID, volumeAZ string) (ready bool, err erro
 		"volumeID": volumeID,
 		"volumeAZ": volumeAZ,
 	})
-	logWithFields.Info("FSStore.IsVolumeReady called")
+	logWithFields.Debug("FSStore.IsVolumeReady called")
 
 	// Get share object from Manila
 	share, err := shares.Get(context.TODO(), b.client, volumeID).Extract()
@@ -522,7 +522,7 @@ func (b *FSStore) createSnapshot(volumeID, volumeAZ string, tags map[string]stri
 		"snapshotTimeout": b.snapshotTimeout,
 		"method":          b.config["method"],
 	})
-	logWithFields.Info("FSStore.CreateSnapshot called")
+	logWithFields.Debug("FSStore.CreateSnapshot called")
 
 	opts := snapshots.CreateOpts{
 		Name:        snapshotName,
@@ -559,7 +559,7 @@ func (b *FSStore) createClone(volumeID, volumeAZ string, tags map[string]string)
 		"snapshotTimeout": b.snapshotTimeout,
 		"method":          b.config["method"],
 	})
-	logWithFields.Info("FSStore.CreateSnapshot called")
+	logWithFields.Debug("FSStore.CreateSnapshot called")
 
 	cloneDesc := "Velero share clone"
 	cloneID, _, err := b.cloneShare(logWithFields, volumeID, cloneName, cloneDesc, volumeAZ, tags)
@@ -588,7 +588,7 @@ func (b *FSStore) deleteSnapshot(snapshotID string) error {
 		"snapshotID": snapshotID,
 		"method":     b.config["method"],
 	})
-	logWithFields.Info("FSStore.DeleteSnapshot called")
+	logWithFields.Debug("FSStore.DeleteSnapshot called")
 
 	// Delete snapshot from Manila
 	if b.ensureDeleted {
@@ -693,7 +693,7 @@ func (b *FSStore) deleteClone(cloneID string) error {
 		"cloneID": cloneID,
 		"method":  b.config["method"],
 	})
-	logWithFields.Info("FSStore.DeleteSnapshot called")
+	logWithFields.Debug("FSStore.DeleteSnapshot called")
 
 	// cascade deletion of the share dependent resources
 	if cloneID != "" && b.cascadeDelete {
@@ -733,7 +733,7 @@ func (b *FSStore) GetVolumeID(unstructuredPV runtime.Unstructured) (string, erro
 	logWithFields := b.log.WithFields(logrus.Fields{
 		"unstructuredPV": unstructuredPV,
 	})
-	logWithFields.Info("FSStore.GetVolumeID called")
+	logWithFields.Debug("FSStore.GetVolumeID called")
 
 	pv := new(v1.PersistentVolume)
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
@@ -759,7 +759,7 @@ func (b *FSStore) SetVolumeID(unstructuredPV runtime.Unstructured, volumeID stri
 		"unstructuredPV": unstructuredPV,
 		"volumeID":       volumeID,
 	})
-	logWithFields.Info("FSStore.SetVolumeID called")
+	logWithFields.Debug("FSStore.SetVolumeID called")
 
 	pv := new(v1.PersistentVolume)
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredPV.UnstructuredContent(), pv); err != nil {
