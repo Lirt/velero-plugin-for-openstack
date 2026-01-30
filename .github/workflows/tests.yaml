@@ -1,6 +1,16 @@
 ---
 name: Integration tests with Kind and DevStack
-on: [pull_request]
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  pull_request:
+    branches:
+      - main
+      - master
 jobs:
   lint:
     name: "Linters (go v${{ matrix.go-version }})"
@@ -46,7 +56,7 @@ jobs:
           go test -v ./...
   integration-test:
     name: "Integration tests (go v${{ matrix.go-version }})"
-    needs: unit-test
+    needs: lint
     runs-on: ubuntu-24.04
     strategy:
       matrix:
