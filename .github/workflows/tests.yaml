@@ -186,6 +186,11 @@ jobs:
             echo "Backup ${VELERO_BACKUP_NAME} was successful";
           fi
 
+          source "${{ github.workspace }}/devstack/openrc"
+          source "/opt/stack/data/venv/bin/activate"
+          swift list
+          swift list "${SWIFT_CONTAINER_NAME}"
+
           # Do restore
           velero restore create "${VELERO_RESTORE_NAME}" --from-backup "${VELERO_BACKUP_NAME}"
           sleep 120
