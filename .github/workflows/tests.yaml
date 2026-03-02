@@ -148,6 +148,7 @@ jobs:
           SWIFT_TMP_URL_KEY="uvrTLW8LdUiwBk2T7KK3RO3bBsyWPeVeVnWvjapO"
           swift post "${SWIFT_CONTAINER_NAME}"
           swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
+          swift list
       - name: Install Velero helm chart
         run: |
           export HOST_IP=$(hostname -I | awk '{print $1}')
@@ -168,8 +169,7 @@ jobs:
                --wait-for-jobs
       - name: Create test backup and validate it
         run: |
-          # Create Cinder/Manila PVC
-          # Checks
+          set -x
           velero backup-location get
           velero snapshot-location get
 
@@ -188,10 +188,12 @@ jobs:
 
           source "${{ github.workspace }}/devstack/openrc"
           source "/opt/stack/data/venv/bin/activate"
+          echo "DEBUG: List container and objects"
           swift list
           swift list "${SWIFT_CONTAINER_NAME}"
 
           # Do restore
+          echo "DEBUG: Perform restore"
           velero restore create "${VELERO_RESTORE_NAME}" --from-backup "${VELERO_BACKUP_NAME}"
           sleep 120
           kubectl logs -n velero -l app.kubernetes.io/name=velero
@@ -306,6 +308,7 @@ jobs:
           echo "DEBUG: Create container"
           swift post "${SWIFT_CONTAINER_NAME}"
           swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
+          swift list
       - name: Install Velero helm chart
         run: |
           export HOST_IP=$(hostname -I | awk '{print $1}')
@@ -326,8 +329,7 @@ jobs:
                --wait-for-jobs
       - name: Create test backup and validate it
         run: |
-          # Create Cinder/Manila PVC
-          # Checks
+          set -x
           echo "DEBUG: List backup locations"
           velero backup-location get
           echo "DEBUG: List snapshot locations"
