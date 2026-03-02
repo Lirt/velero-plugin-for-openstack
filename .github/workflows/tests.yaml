@@ -266,39 +266,36 @@ jobs:
           branch: 'stable/2025.2'
           enable_workaround_docker_io: 'false'
           conf_overrides: |
-            SWIFT_ENABLE_TEMPURLS=True
-            SWIFT_TEMPURL_KEY=secretkey
-            SWIFT_HASH=12394u39845623984j28hf93d9173
-            SWIFT_DEFAULT_BIND_PORT=15492
-            SERVICE_TIMEOUT=200
-            enable_service key rabbit mysql c-bak c-api c-vol c-sch n-api n-crt n-cpu n-cond n-sch n-api-meta n-sproxy placement-api placement-client
-
-            CINDER_ISCSI_HELPER=tgtadm
+            [[local|localrc]]
+            ADMIN_PASSWORD=secret
+            DATABASE_PASSWORD=root
+            RABBIT_PASSWORD=secret
+            SERVICE_PASSWORD=secret
+            INSTALL_TEMPEST=False
+            GIT_BASE=https://github.com
+            LOGFILE=/opt/stack/devstack.log
+            LOG_COLOR=True
+            VERBOSE=True
+            INSTALL_TEMPEST=False
+            SERVICE_TIMEOUT=600
 
             # Use Ceph with Rados Gateway
-            enable_plugin devstack-plugin-ceph https://opendev.org/openstack/devstack-plugin-ceph
+            RGW_PORT="8080"
+            CEPH_RGW_PORT="8080"
             ENABLE_CEPH_CINDER=True     # ceph backend for cinder
             ENABLE_CEPH_GLANCE=True     # store images in ceph
             ENABLE_CEPH_C_BAK=True      # backup volumes to ceph
             ENABLE_CEPH_NOVA=True       # allow nova to use ceph resources
-            ENABLE_CEPH_MANILA=True     # allow manila to use CephFS as backend (Native CephFS or CephFS via NFS)
+            # ENABLE_CEPH_MANILA=True     # allow manila to use CephFS as backend (Native CephFS or CephFS via NFS)
             ENABLE_CEPH_RGW=True
+            ENABLED_SERVICES=",-horizon,-tempest,-dstat"
+            CINDER_TARGET_HELPER=tgtadm
 
-            # enable_plugin manila https://github.com/openstack/manila stable/2025.2
-            # LVM Backend config options
-            # MANILA_SERVICE_IMAGE_ENABLED=False
-            # SHARE_DRIVER=manila.share.drivers.lvm.LVMShareDriver
-            # MANILA_ENABLED_BACKENDS=chicago,denver
-            # MANILA_BACKEND1_CONFIG_GROUP_NAME=chicago
-            # MANILA_BACKEND2_CONFIG_GROUP_NAME=denver
-            # MANILA_SHARE_BACKEND1_NAME=CHICAGO
-            # MANILA_SHARE_BACKEND2_NAME=DENVER
-            # MANILA_OPTGROUP_chicago_driver_handles_share_servers=False
-            # MANILA_OPTGROUP_denver_driver_handles_share_servers=False
-            # SHARE_BACKING_FILE_SIZE=32000M
-            # MANILA_DEFAULT_SHARE_TYPE_EXTRA_SPECS='snapshot_support=True create_share_from_snapshot_support=True revert_to_snapshot_support=True mount_snapshot_support=True'
-            # MANILA_CONFIGURE_DEFAULT_TYPES=True
-            # MANILA_INSTALL_TEMPEST_PLUGIN_SYSTEMWIDE=false
+            # Do not enable swift, because we have radosgw
+            disable_service horizon tempest
+            enable_service key rabbit mysql c-bak c-api c-vol c-sch n-api n-crt n-cpu n-cond n-sch n-api-meta n-sproxy placement-api placement-client
+            # Use custom fork with fixes for RadosGW
+            enable_plugin devstack-plugin-ceph https://github.com/Lirt/devstack-plugin-ceph.git
       - name: Prepare Swift container for velero backups
         run: |
           source "${{ github.workspace }}/devstack/openrc"
