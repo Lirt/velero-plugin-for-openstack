@@ -169,8 +169,8 @@ go build
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.6.0 \
-              --build-arg VERSION=v0.6.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.8.0 \
+              --build-arg VERSION=v0.8.0 \
               --build-arg GIT_SHA=somesha \
               --no-cache \
               --push \
