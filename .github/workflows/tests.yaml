@@ -224,6 +224,7 @@ jobs:
       VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME: velero-plugin-for-openstack
       SWIFT_CONTAINER_NAME: my-swift-container
       TESTS_DIRECTORY: tests/actions/integration-tests
+      TERM: xterm-256color
     steps:
       - name: Checkout velero-plugin-for-openstack
         uses: actions/checkout@v6
