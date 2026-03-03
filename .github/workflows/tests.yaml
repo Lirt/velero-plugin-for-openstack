@@ -206,12 +206,13 @@ jobs:
             echo "Restore ${VELERO_RESTORE_NAME} was successful";
           fi
   integration-test-radosgw:
-    name: "Integration tests with RadosGW (go v${{ matrix.go-version }})"
+    name: "Integration tests with RadosGW Ceph ${{ matrix.ceph-version }} (go v${{ matrix.go-version }})"
     needs: lint
     runs-on: ubuntu-24.04
     strategy:
       matrix:
         go-version: [ '1.25' ]
+        ceph-version: [ 'v15' ]
     env:
       VELERO_CLI_VERSION: 1.17.2
       # Velero chart 11.3.2 contains Velero server version 1.17.1
@@ -274,15 +275,22 @@ jobs:
             RABBIT_PASSWORD=secret
             SERVICE_PASSWORD=secret
             INSTALL_TEMPEST=False
-            GIT_BASE=https://github.com
             LOGFILE=/opt/stack/devstack.log
             LOG_COLOR=True
             VERBOSE=True
-            INSTALL_TEMPEST=False
             SERVICE_TIMEOUT=600
 
-            # Use Ceph with Rados Gateway
-            RGW_PORT="8080"
+            # Change Ceph Version by changing tag in CEPH_CONTAINER_IMAGE.
+            # Available versions are:
+            #   octopus: quay.io/ceph/ceph:v15
+            #   pacific: quay.io/ceph/ceph:v16
+            #   quincy: quay.io/ceph/ceph:v17
+            #   reef: quay.io/ceph/ceph:v18
+            #   squid: quay.io/ceph/ceph:v19
+            #   tentacle: quay.io/ceph/ceph:v20
+            CEPH_CONTAINER_IMAGE=quay.io/ceph/ceph:${{ matrix.go-version }}
+
+            # Setup Ceph with Rados Gateway
             CEPH_RGW_PORT="8080"
             ENABLE_CEPH_CINDER=True     # ceph backend for cinder
             ENABLE_CEPH_GLANCE=True     # store images in ceph
@@ -290,13 +298,13 @@ jobs:
             ENABLE_CEPH_NOVA=True       # allow nova to use ceph resources
             # ENABLE_CEPH_MANILA=True     # allow manila to use CephFS as backend (Native CephFS or CephFS via NFS)
             ENABLE_CEPH_RGW=True
-            ENABLED_SERVICES=",-horizon,-tempest,-dstat"
             CINDER_TARGET_HELPER=tgtadm
 
-            # Do not enable swift, because we have radosgw
+            ENABLED_SERVICES=",-horizon,-tempest,-dstat"
             disable_service horizon tempest
             enable_service key rabbit mysql c-bak c-api c-vol c-sch n-api n-crt n-cpu n-cond n-sch n-api-meta n-sproxy placement-api placement-client
-            # Use custom fork with fixes for RadosGW
+
+            GIT_BASE=https://github.com
             enable_plugin devstack-plugin-ceph https://github.com/Lirt/devstack-plugin-ceph.git
       - name: Prepare Swift container for velero backups
         run: |
