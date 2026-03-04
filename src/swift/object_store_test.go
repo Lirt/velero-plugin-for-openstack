@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -195,7 +196,8 @@ func handleGetObject(t *testing.T, fakeServer th.FakeServer, container, object s
 }
 
 func handlePutObject(t *testing.T, fakeServer th.FakeServer, container, object string, data []byte) {
-	fakeServer.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, object),
+	objectPathEscaped := url.PathEscape(object)
+	fakeServer.Mux.HandleFunc(fmt.Sprintf("/%s/%s", container, objectPathEscaped),
 		func(w http.ResponseWriter, r *http.Request) {
 			th.TestMethod(t, r, http.MethodPut)
 			th.TestHeader(t, r, "X-Auth-Token", fakeClient.TokenID)

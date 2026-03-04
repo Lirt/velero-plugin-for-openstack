@@ -1,6 +1,16 @@
 ---
 name: Integration tests with Kind and DevStack
-on: [pull_request]
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  pull_request:
+    branches:
+      - main
+      - master
 jobs:
   lint:
     name: "Linters (go v${{ matrix.go-version }})"
@@ -44,9 +54,9 @@ jobs:
       - name: Run unit tests
         run: |
           go test -v ./...
-  integration-test:
-    name: "Integration tests (go v${{ matrix.go-version }})"
-    needs: unit-test
+  integration-test-openstack:
+    name: "Integration tests with Swift (go v${{ matrix.go-version }})"
+    needs: lint
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -135,9 +145,10 @@ jobs:
         run: |
           source "${{ github.workspace }}/devstack/openrc"
           source "/opt/stack/data/venv/bin/activate"
-          SWIFT_TMP_URL_KEY=$(dd if=/dev/urandom | tr -dc A-Za-z0-9 | head -c 40)
+          SWIFT_TMP_URL_KEY="uvrTLW8LdUiwBk2T7KK3RO3bBsyWPeVeVnWvjapO"
           swift post "${SWIFT_CONTAINER_NAME}"
           swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
+          swift list
       - name: Install Velero helm chart
         run: |
           export HOST_IP=$(hostname -I | awk '{print $1}')
@@ -158,8 +169,7 @@ jobs:
                --wait-for-jobs
       - name: Create test backup and validate it
         run: |
-          # Create Cinder/Manila PVC
-          # Checks
+          set -x
           velero backup-location get
           velero snapshot-location get
 
@@ -176,7 +186,189 @@ jobs:
             echo "Backup ${VELERO_BACKUP_NAME} was successful";
           fi
 
+          source "${{ github.workspace }}/devstack/openrc"
+          source "/opt/stack/data/venv/bin/activate"
+          echo "DEBUG: List container and objects"
+          swift list
+          swift list "${SWIFT_CONTAINER_NAME}"
+
           # Do restore
+          echo "DEBUG: Perform restore"
+          velero restore create "${VELERO_RESTORE_NAME}" --from-backup "${VELERO_BACKUP_NAME}"
+          sleep 120
+          kubectl logs -n velero -l app.kubernetes.io/name=velero
+          velero describe restore "${VELERO_RESTORE_NAME}"
+          velero restore logs "${VELERO_RESTORE_NAME}"
+          if ! velero describe restore "${VELERO_RESTORE_NAME}" | grep -q "^Phase:.*Completed"; then
+            echo "Restore ${VELERO_RESTORE_NAME} failed";
+            exit 1
+          else
+            echo "Restore ${VELERO_RESTORE_NAME} was successful";
+          fi
+  integration-test-radosgw:
+    name: "Integration tests with RadosGW Ceph ${{ matrix.ceph-version }} (go v${{ matrix.go-version }})"
+    needs: lint
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        go-version: [ '1.25' ]
+        ceph-version: [ 'v20' ]
+    env:
+      VELERO_CLI_VERSION: 1.17.2
+      # Velero chart 11.3.2 contains Velero server version 1.17.1
+      VELERO_CHART_VERSION: 11.3.2
+      VELERO_RESTORE_NAME: my-test-restore-01
+      VELERO_BACKUP_NAME: my-test-backup-01
+      CINDER_CSI_CHART_VERSION: 2.35.0
+      MANILA_CSI_CHART_VERSION: 2.35.0
+      VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME: velero-plugin-for-openstack
+      SWIFT_CONTAINER_NAME: my-swift-container
+      TESTS_DIRECTORY: tests/actions/integration-tests
+      TERM: xterm-256color
+    steps:
+      - name: Checkout velero-plugin-for-openstack
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Build Docker image
+        run: |
+          docker buildx build \
+                 --file docker/Dockerfile \
+                 --tag "${VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+                 --build-arg VERSION=${GITHUB_REF_NAME} \
+                 --build-arg GIT_SHA=${GITHUB_SHA} \
+                 --platform linux/amd64 \
+                 --load \
+                 .
+      - name: Install Kind
+        uses: helm/kind-action@v1.13.0
+        with:
+          # Kubernetes 1.35.x
+          version: v0.31.0
+          cluster_name: kind
+          wait: 120s
+      - name: Load new velero-plugin-for-openstack image to kind cluster
+        run: |
+          kind load docker-image "${VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME}:${GITHUB_SHA}"
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v4.1.0'
+      - name: Install Velero CLI
+        run: |
+          wget --quiet "https://github.com/vmware-tanzu/velero/releases/download/v${VELERO_CLI_VERSION}/velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
+          tar -zxvf "velero-v${VELERO_CLI_VERSION}-linux-amd64.tar.gz"
+          sudo mv "velero-v${VELERO_CLI_VERSION}-linux-amd64/velero" /usr/local/bin/velero
+          chmod 750 /usr/local/bin/velero
+      - name: Deploy DevStack
+        uses: EmilienM/devstack-action@v0.19
+        with:
+          branch: 'stable/2025.2'
+          enable_workaround_docker_io: 'false'
+          conf_overrides: |
+            [[local|localrc]]
+            ADMIN_PASSWORD=secret
+            DATABASE_PASSWORD=root
+            RABBIT_PASSWORD=secret
+            SERVICE_PASSWORD=secret
+            INSTALL_TEMPEST=False
+            LOGFILE=/opt/stack/devstack.log
+            LOG_COLOR=True
+            VERBOSE=True
+            SERVICE_TIMEOUT=600
+
+            # Change Ceph Version by changing tag in CEPH_CONTAINER_IMAGE.
+            # Available versions are:
+            #   octopus: quay.io/ceph/ceph:v15
+            #   pacific: quay.io/ceph/ceph:v16
+            #   quincy: quay.io/ceph/ceph:v17
+            #   reef: quay.io/ceph/ceph:v18
+            #   squid: quay.io/ceph/ceph:v19
+            #   tentacle: quay.io/ceph/ceph:v20
+            CEPH_CONTAINER_IMAGE=quay.io/ceph/ceph:${{ matrix.ceph-version }}
+
+            # Setup Ceph with Rados Gateway
+            CEPH_RGW_PORT="8080"
+            ENABLE_CEPH_CINDER=True     # ceph backend for cinder
+            ENABLE_CEPH_GLANCE=True     # store images in ceph
+            ENABLE_CEPH_C_BAK=True      # backup volumes to ceph
+            ENABLE_CEPH_NOVA=True       # allow nova to use ceph resources
+            # ENABLE_CEPH_MANILA=True     # allow manila to use CephFS as backend (Native CephFS or CephFS via NFS)
+            ENABLE_CEPH_RGW=True
+            CINDER_TARGET_HELPER=tgtadm
+
+            ENABLED_SERVICES=",-horizon,-tempest,-dstat"
+            disable_service horizon tempest
+            enable_service key rabbit mysql c-bak c-api c-vol c-sch n-api n-crt n-cpu n-cond n-sch n-api-meta n-sproxy placement-api placement-client
+
+            GIT_BASE=https://github.com
+            enable_plugin devstack-plugin-ceph https://github.com/Lirt/devstack-plugin-ceph.git
+      - name: Prepare Swift container for velero backups
+        run: |
+          set -x
+          source "${{ github.workspace }}/devstack/openrc"
+          source "/opt/stack/data/venv/bin/activate"
+          echo "DEBUG: Show authorization configuration"
+          swift auth
+          SWIFT_TMP_URL_KEY="uvrTLW8LdUiwBk2T7KK3RO3bBsyWPeVeVnWvjapO"
+          echo "DEBUG: Create container"
+          swift post "${SWIFT_CONTAINER_NAME}"
+          swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
+          swift list
+          # Display ceph and cephadm versions
+          sudo ceph version
+          sudo cephadm version
+      - name: Install Velero helm chart
+        run: |
+          export HOST_IP=$(hostname -I | awk '{print $1}')
+          export OS_AUTH_URL=$(echo -n "http://${HOST_IP}/identity" | base64)
+          envsubst < "${TESTS_DIRECTORY}/velero-credentials.yaml" > "${TESTS_DIRECTORY}/velero-credentials-templated.yaml"
+          kubectl create namespace velero
+          kubectl apply -f "${TESTS_DIRECTORY}/velero-credentials-templated.yaml"
+          helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
+          helm repo update
+          helm install velero vmware-tanzu/velero \
+               --namespace velero \
+               --version "${VELERO_CHART_VERSION}" \
+               --values "${TESTS_DIRECTORY}/velero-helm-values.yaml" \
+               --set "initContainers[0].image=${VELERO_PLUGIN_OPENSTACK_DOCKER_IMAGE_NAME}:${GITHUB_SHA}" \
+               --set "upgradeCRDs=false" \
+               --timeout 10m \
+               --wait \
+               --wait-for-jobs
+      - name: Create test backup and validate it
+        run: |
+          echo "DEBUG: List backup locations"
+          velero backup-location get
+          echo "DEBUG: List snapshot locations"
+          velero snapshot-location get
+
+          # Do backup
+          echo "DEBUG: Perform backup"
+          velero backup create --storage-location swift "${VELERO_BACKUP_NAME}"
+          sleep 120
+          kubectl logs -n velero -l app.kubernetes.io/name=velero
+          velero describe backups "${VELERO_BACKUP_NAME}"
+          velero backup logs "${VELERO_BACKUP_NAME}"
+          if ! velero describe backups "${VELERO_BACKUP_NAME}" | grep -q "^Phase:.*Completed"; then
+            echo "Backup ${VELERO_BACKUP_NAME} failed";
+            exit 1
+          else
+            echo "Backup ${VELERO_BACKUP_NAME} was successful";
+          fi
+
+          source "${{ github.workspace }}/devstack/openrc"
+          source "/opt/stack/data/venv/bin/activate"
+          echo "DEBUG: List container and objects"
+          swift list
+          swift list "${SWIFT_CONTAINER_NAME}"
+
+          # Do restore
+          echo "DEBUG: Perform restore"
           velero restore create "${VELERO_RESTORE_NAME}" --from-backup "${VELERO_BACKUP_NAME}"
           sleep 120
           kubectl logs -n velero -l app.kubernetes.io/name=velero
