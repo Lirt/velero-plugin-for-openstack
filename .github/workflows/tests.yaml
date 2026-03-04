@@ -212,8 +212,7 @@ jobs:
     strategy:
       matrix:
         go-version: [ '1.25' ]
-        ceph-version: [ 'v15' ]
-        # ceph-version: [ 'v20' ]
+        ceph-version: [ 'v20' ]
     env:
       VELERO_CLI_VERSION: 1.17.2
       # Velero chart 11.3.2 contains Velero server version 1.17.1
