@@ -212,7 +212,8 @@ jobs:
     strategy:
       matrix:
         go-version: [ '1.25' ]
-        ceph-version: [ 'v20' ]
+        ceph-version: [ 'v15' ]
+        # ceph-version: [ 'v20' ]
     env:
       VELERO_CLI_VERSION: 1.17.2
       # Velero chart 11.3.2 contains Velero server version 1.17.1
@@ -309,6 +310,7 @@ jobs:
             enable_plugin devstack-plugin-ceph https://github.com/Lirt/devstack-plugin-ceph.git
       - name: Prepare Swift container for velero backups
         run: |
+          set -x
           source "${{ github.workspace }}/devstack/openrc"
           source "/opt/stack/data/venv/bin/activate"
           echo "DEBUG: Show authorization configuration"
@@ -318,6 +320,9 @@ jobs:
           swift post "${SWIFT_CONTAINER_NAME}"
           swift post -m "Temp-URL-Key:${SWIFT_TMP_URL_KEY}"
           swift list
+          # Display ceph and cephadm versions
+          sudo ceph version
+          sudo cephadm version
       - name: Install Velero helm chart
         run: |
           export HOST_IP=$(hostname -I | awk '{print $1}')
@@ -338,7 +343,6 @@ jobs:
                --wait-for-jobs
       - name: Create test backup and validate it
         run: |
-          set -x
           echo "DEBUG: List backup locations"
           velero backup-location get
           echo "DEBUG: List snapshot locations"
