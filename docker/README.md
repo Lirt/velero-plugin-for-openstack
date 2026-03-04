@@ -6,6 +6,7 @@
 * [`v0.6.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.6.1/docker/Dockerfile)
 * [`v0.7.0` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.7.0/docker/Dockerfile)
 * [`v0.8.0` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.8.0/docker/Dockerfile)
+* [`v0.8.1` (Dockerfile)](https://github.com/Lirt/velero-plugin-for-openstack/blob/v0.8.1/docker/Dockerfile)
 
 # Velero plugin for OpenStack
 

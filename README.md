@@ -157,15 +157,15 @@ Restic was deprecated in Velero since version 1.15. This plugin does not support
 
 ### When to use File System Backups or Volume Snapshots?
 
-Openstack plugin for Velero creates backups using various Openstack block volume methods (Cinder snapshot|clone|backup, Glance image, Manila snapshot|clone) to perform the backup. This means it's not reading content of volumes and copying/pushing them to some kind of remote backup location. Persistence of these backups depends on Openstack Cinder or Manila backend setup.
+Openstack plugin for Velero creates backups using various Openstack block volume methods (Cinder snapshot|clone|backup, Glance image, Manila snapshot|clone) to perform the backup. This means it's not reading content of volumes and copying/pushing them to a remote backup location. Persistence of these backups depends on Openstack Cinder or Manila backend setup.
 
-If your snapshot|clone|backup is saved in the same datacenter and AZ as the original volume or has a dependency on the original volume (is not usable when original volume is removed) you might not be able to recover your data from the backup. Proper backup should always be made to an offsite location with no dependency on original volumes.
+If your snapshot|clone|backup is saved in the same datacenter and availability zone as the original volume or has a dependency on the original volume (is not usable when original volume is removed) you might not be able to recover your data from the backup. Proper backup should always be made to an offsite location with no dependency on original volumes.
 
 File system backups (FSB) using Kopia or Restic read the content of volumes and push them to a remote backup location (object storage). This means that FSB backups are independent of the original volume and can be used to recover data even when the original volume is removed or the whole datacenter is lost. The file system backup process can however suffer from data consistency issues when the volume is in-use during the backup procedure or the filesystem is not quiesced.
 
 It is very important not only to make backups, but also do regular restores and validation of restored backups.
 
-This plugin holds no warranty for your backups or restores. If you happen to not understand the plugin, differences between FSB, volume snapshots or anything else in this repository, please contact a professional for help with implementation of your backups.
+This plugin holds no warranty for your backups or restores. If you happen to not understand the plugin, differences between FSB, volume snapshots or anything else in this repository, please search for a professional help with implementation of your backups.
 
 ## Known Issues
 
