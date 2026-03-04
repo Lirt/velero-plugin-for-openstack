@@ -290,7 +290,7 @@ jobs:
             #   reef: quay.io/ceph/ceph:v18
             #   squid: quay.io/ceph/ceph:v19
             #   tentacle: quay.io/ceph/ceph:v20
-            CEPH_CONTAINER_IMAGE=quay.io/ceph/ceph:${{ matrix.go-version }}
+            CEPH_CONTAINER_IMAGE=quay.io/ceph/ceph:${{ matrix.ceph-version }}
 
             # Setup Ceph with Rados Gateway
             CEPH_RGW_PORT="8080"
