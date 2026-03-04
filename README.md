@@ -17,7 +17,7 @@ Official images are provided from [DockerHub](https://hub.docker.com/r/lirt/vele
     - [Backup Methods](#backup-methods)
     - [Consistency and Durability](#consistency-and-durability)
     - [Native VolumeSnapshots](#native-volumesnapshots)
-    - [Restic](#restic)
+    - [Restic and Kopia](#restic-and-kopia)
   - [Known Issues](#known-issues)
   - [Test & Build](#test--build)
   - [Development](#development)
@@ -28,7 +28,7 @@ Below is a matrix of plugin versions and Velero versions for which the compatibi
 
 | Plugin Version | Velero Version |
 | :------------- | :------------- |
-| v0.8.x         | 1.11.x 1.12.x 1.13.x |
+| v0.8.x         | 1.15.x, 1.16.x 1.17.x |
 | v0.7.x         | 1.11.x 1.12.x 1.13.x |
 | v0.6.x         | 1.9.x, 1.10.x 1.11.x |
 | v0.5.x         | v1.4.x, v1.5.x, v1.6.x, v1.7.x, v1.8.x, 1.9.x, 1.10.x 1.11.x |
@@ -145,13 +145,27 @@ Please note two facts regarding volume backups:
 
 Alternative Kubernetes native solution (GA since 1.20) for volume snapshots are [VolumeSnapshots](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) using [snapshot-controller](https://kubernetes-csi.github.io/docs/snapshot-controller.html).
 
-### Restic
+### File System Backups: Restic and Kopia
 
-Volume backups with Velero can also be done using [Restic and Kopia](https://velero.io/docs/main/file-system-backup/). Please understand that this repository does not provide any functionality for restic and kopia and their implementation is done purely in Velero code!
+Please understand that this repository and plugin does not provide any functionality for file system backups such as Kopia. Implementation of file system backups is done purely in the Velero code!
 
-There is a common similarity that `restic` can use OpenStack Swift as object storage for backups. Restic way of authentication and implementation is however very different from this repository and it means that some ways of authentication that work here will not work with restic. Please refer to [official restic documentation](https://restic.readthedocs.io/en/latest/030_preparing_a_new_repo.html#openstack-swift) to understand how are you supposed to configure authentication variables with restic.
+Kopia is at the moment supported only in [official Velero plugins](https://velero.io/docs/main/supported-providers/) (AWS, Azure, GCP). The missing support for community plugins is tracked locally in [this issue](https://github.com/Lirt/velero-plugin-for-openstack/issues/125) and in [upstream Velero repository](https://github.com/vmware-tanzu/velero/issues/9497).
 
-Recommended way of using this plugin with restic is to use authentication with environment variables and only for 1 cloud and 1 BackupStorageLocation. In the BSL you need to configure `config.resticRepoPrefix: swift:<CONTAINER_NAME>:/<PATH>` - for example `config.resticRepoPrefix: swift:my-awesome-container:/restic`.
+Since Openstack Swift supports S3 compatible API, it is possible that Kopia can be used together with Swift backend and AWS plugin for Velero. This is not tested or supported by this repository.
+
+Restic was deprecated in Velero since version 1.15. This plugin does not support users at using Restic anymore and recommends to migrate to Kopia.
+
+### When to use File System Backups or Volume Snapshots?
+
+Openstack plugin for Velero creates backups using various Openstack block volume methods (Cinder snapshot|clone|backup, Glance image, Manila snapshot|clone) to perform the backup. This means it's not reading content of volumes and copying/pushing them to a remote backup location. Persistence of these backups depends on Openstack Cinder or Manila backend setup.
+
+If your snapshot|clone|backup is saved in the same datacenter and availability zone as the original volume or has a dependency on the original volume (is not usable when original volume is removed) you might not be able to recover your data from the backup. Proper backup should always be made to an offsite location with no dependency on original volumes.
+
+File system backups (FSB) using Kopia or Restic read the content of volumes and push them to a remote backup location (object storage). This means that FSB backups are independent of the original volume and can be used to recover data even when the original volume is removed or the whole datacenter is lost. The file system backup process can however suffer from data consistency issues when the volume is in-use during the backup procedure or the filesystem is not quiesced.
+
+It is very important not only to make backups, but also do regular restores and validation of restored backups.
+
+This plugin holds no warranty for your backups or restores. If you happen to not understand the plugin, differences between FSB, volume snapshots or anything else in this repository, please search for a professional help with implementation of your backups.
 
 ## Known Issues
 
@@ -169,8 +183,8 @@ go build
 docker buildx build \
               --file docker/Dockerfile \
               --platform linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64 \
-              --tag lirt/velero-plugin-for-openstack:v0.8.0 \
-              --build-arg VERSION=v0.8.0 \
+              --tag lirt/velero-plugin-for-openstack:v0.8.1 \
+              --build-arg VERSION=v0.8.1 \
               --build-arg GIT_SHA=somesha \
               --no-cache \
               --push \
