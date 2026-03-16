@@ -406,7 +406,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 	opts := &shares.CreateOpts{
 		ShareProto:       snapshot.ShareProto,
 		Size:             snapshot.Size,
-		AvailabilityZone: shareAZ,
+		AvailabilityZone: originShare.AvailabilityZone,
 		Name:             shareName,
 		Description:      shareDesc,
 		SnapshotID:       snapshot.ID,
