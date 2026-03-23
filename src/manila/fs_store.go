@@ -450,7 +450,7 @@ func (b *FSStore) cloneShare(logWithFields *logrus.Entry, shareID, shareName, sh
 
 	// migrate a share to the desired AZ
 	if b.enforceAZ && shareAZ != "" && share.AvailabilityZone != shareAZ {
-		err = b.changeAZ(logWithFields, shareID, shareAZ)
+		err = b.changeAZ(logWithFields, share.ID, shareAZ)
 		if err != nil {
 			logWithFields.Errorf("failed to move a share to the target %s availability zone", shareAZ)
 			return share.ID, shareAccessID, fmt.Errorf("failed to move a share to the target %s availability zone: %w", shareAZ, err)
