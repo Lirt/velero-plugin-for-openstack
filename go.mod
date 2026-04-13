@@ -3,7 +3,7 @@ module github.com/Lirt/velero-plugin-for-openstack
 go 1.25.7
 
 require (
-	github.com/gophercloud/gophercloud/v2 v2.11.1
+	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/gophercloud/utils/v2 v2.0.0-20260107124036-1d7954eb9711
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/pflag v1.0.10
@@ -61,7 +61,7 @@ require (
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/term v0.38.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
