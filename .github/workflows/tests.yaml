@@ -281,18 +281,15 @@ jobs:
             VERBOSE=True
             SERVICE_TIMEOUT=600
 
-            # Change Ceph Version by changing tag in CEPH_CONTAINER_IMAGE.
+            # Change Ceph Version by changing tag in CONTAINER_IMAGE.
             # Available versions are:
-            #   octopus: quay.io/ceph/ceph:v15
-            #   pacific: quay.io/ceph/ceph:v16
-            #   quincy: quay.io/ceph/ceph:v17
             #   reef: quay.io/ceph/ceph:v18
             #   squid: quay.io/ceph/ceph:v19
             #   tentacle: quay.io/ceph/ceph:v20
-            CEPH_CONTAINER_IMAGE=quay.io/ceph/ceph:${{ matrix.ceph-version }}
+            CONTAINER_IMAGE=quay.io/ceph/ceph:${{ matrix.ceph-version }}
 
             # Setup Ceph with Rados Gateway
-            CEPH_RGW_PORT="8080"
+            RGW_PORT="8086"
             ENABLE_CEPH_CINDER=True     # ceph backend for cinder
             ENABLE_CEPH_GLANCE=True     # store images in ceph
             ENABLE_CEPH_C_BAK=True      # backup volumes to ceph
