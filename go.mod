@@ -5,7 +5,7 @@ go 1.25.8
 require (
 	github.com/gophercloud/gophercloud/v2 v2.13.0
 	github.com/gophercloud/utils/v2 v2.0.0-20260107124036-1d7954eb9711
-	github.com/sirupsen/logrus v1.9.4
+	github.com/sirupsen/logrus v1.10.0
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/vmware-tanzu/velero v1.18.2
